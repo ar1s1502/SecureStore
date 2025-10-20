@@ -14,11 +14,11 @@ To test your implementation, run `go test -v` inside of the `client_test` direct
 
 Fill in this section with the student IDs of all the members in your project group.
 
-Partner 1 Name:
+Partner 1 Name: Aaron Teng
 
-Partner 1 SID:
+Partner 1 SID: 3038774611
 
-Partner 1 Email:
+Partner 1 Email: aaronteng@berkeley.edu
 
 Partner 2 Name (if applicable):
 
@@ -28,4 +28,4 @@ Partner 2 Email (if applicable):
 
 Also add a link to this repo below (should start with https://github.com/cs161-students/).
 
-Link to this Github repo:
+Link to this Github repo: https://github.com/cs161-students/fa25-proj2-seguro/
