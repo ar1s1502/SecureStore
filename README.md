@@ -20,11 +20,11 @@ Partner 1 SID: 3038774611
 
 Partner 1 Email: aaronteng@berkeley.edu
 
-Partner 2 Name (if applicable):
+Partner 2 Name: Premkumar Senthilkumar
 
-Partner 2 SID (if applicable):
+Partner 2 SID: 3038355712 
 
-Partner 2 Email (if applicable):
+Partner 2 Email: premsenthil@berkeley.edu
 
 Also add a link to this repo below (should start with https://github.com/cs161-students/).
 
