@@ -251,4 +251,25 @@ var _ = Describe("Client Tests", func() {
 		})
 
 	})
+
+	var _ = Describe("Flag Tests", func() {
+
+		Specify("Flag Test: Test Invalid UserInit", func() {
+			userlib.DebugMsg("Initlalizing user Alice")
+			alice, err = client.InitUser("alice", defaultPassword)
+			Expect(err).To(BeNil());
+
+			userlib.DebugMsg("Initializing second user with same username")
+			charles, err = client.InitUser("alice", defaultPassword) 
+			Expect(err).ToNot(BeNil());
+		})
+
+		Specify("Flat Test: Test Invalid UserInit 2", func() {
+			userlib.DebugMsg("Initializing alice with empty username")
+			alice, err = client.InitUser("", defaultPassword) 
+			Expect(err).ToNot(BeNil())
+		})
+
+		Specify()
+	})
 })
