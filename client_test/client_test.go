@@ -272,7 +272,7 @@ var _ = Describe("Client Tests", func() {
 			userlib.DebugMsg("nonexistent user get")
 			charles, err = client.GetUser("ADSF", defaultPassword)
 			Expect(err).ToNot(BeNil())
-		
+
 			userlib.DebugMsg("Initializing alice")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
@@ -386,7 +386,7 @@ var _ = Describe("Client Tests", func() {
 
 			userlib.DebugMsg("Alice tries again with a different file")
 			alice.StoreFile(aliceFile+"2", []byte(contentOne+"2"))
-			invite,_ = alice.CreateInvitation(aliceFile+"2", "bob")
+			invite, _ = alice.CreateInvitation(aliceFile+"2", "bob")
 
 			userlib.DebugMsg("Mallory modifies everything on datastore")
 			datastore := userlib.DatastoreGetMap()
@@ -412,18 +412,18 @@ var _ = Describe("Client Tests", func() {
 
 			userlib.DebugMsg("Alice shares a file with Bob")
 			alice.StoreFile(aliceFile, []byte(contentOne))
-			invite,_ :=alice.CreateInvitation(aliceFile, "bob")
+			invite, _ := alice.CreateInvitation(aliceFile, "bob")
 			userlib.DebugMsg("Doris tries to accept Alice's invite instead")
 			err = doris.AcceptInvitation("alice", invite, dorisFile)
 			Expect(err).ToNot(BeNil())
 			userlib.DebugMsg("Bob accepts Alice's invite, and posts the invite at some other uid of his choosing")
-			inviteContent,_ := userlib.DatastoreGet(invite)
+			inviteContent, _ := userlib.DatastoreGet(invite)
 			copyInvite := uuid.New()
 			userlib.DatastoreSet(copyInvite, []byte(inviteContent))
-			bob.AcceptInvitation("alice", invite, bobFile);
+			bob.AcceptInvitation("alice", invite, bobFile)
 
 			userlib.DebugMsg("Alice shares a file with Charles")
-			invite,_ = alice.CreateInvitation(aliceFile, "charles")
+			invite, _ = alice.CreateInvitation(aliceFile, "charles")
 			userlib.DebugMsg("Charles accepts the invite, and remembers its uid")
 			charles.AcceptInvitation("alice", invite, charlesFile)
 			charlesInvite := invite
@@ -440,12 +440,13 @@ var _ = Describe("Client Tests", func() {
 			userlib.DebugMsg("Doris appends ContentTwo to the file")
 			doris.AppendToFile(dorisFile, []byte(contentTwo))
 			data, _ = bob.LoadFile(bobFile)
-			Expect(data).To(Equal([]byte(contentOne+contentTwo)))
+			Expect(data).To(Equal([]byte(contentOne + contentTwo)))
 
 			userlib.DebugMsg("Alice revokes Charles's access to aliceFile")
 			err = alice.RevokeAccess(aliceFile, "charles")
 			Expect(err).To(BeNil())
 
+			// what if charles remembers invitation uid and then tries to accept it again?
 			userlib.DebugMsg("Charles tries to regain access via his remembered invite uid")
 			err = charles.AcceptInvitation("alice", charlesInvite, charlesFile+"2")
 			Expect(err).ToNot(BeNil())
@@ -458,22 +459,20 @@ var _ = Describe("Client Tests", func() {
 			err = charles.AppendToFile(charlesFile+"2", []byte(contentThree))
 			Expect(err).To(BeNil())
 			err = doris.AppendToFile(dorisFile+"2", []byte(contentThree))
-			Expect(err).To(BeNil())			
+			Expect(err).To(BeNil())
 
 			userlib.DebugMsg("Alice revokes Bob's access to aliceFile")
 			err = alice.RevokeAccess(aliceFile, "bob")
 			Expect(err).To(BeNil())
 
+			// what if bob datastore sets the invitation somewhere else (Creates his own invitation) and then accepts it after revoke?
 			userlib.DebugMsg("Bob tries to regain access by accessing the copy invite he posted")
 			err = bob.AcceptInvitation("alice", copyInvite, bobFile+"2")
 			Expect(err).ToNot(BeNil())
 
 			userlib.DebugMsg("Bob tries to load the file")
-			_, err = bob.LoadFile(bobFile+"2")
+			_, err = bob.LoadFile(bobFile + "2")
 			Expect(err).ToNot(BeNil())
-
-			// what if charles remembers invitation uid and then tries to accept it again?
-			// what if bob datastore sets the invitation somewhere else (Creates his own invitation) and then accepts it after revoke?
 		})
 	})
 })
