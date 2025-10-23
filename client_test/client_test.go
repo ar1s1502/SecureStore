@@ -12,7 +12,7 @@ import (
 	_ "strings"
 	"testing"
 
-	_ "github.com/google/uuid"
+	uuid "github.com/google/uuid"
 
 	// A "dot" import is used here so that the functions in the ginko and gomega
 	// modules can be used without an identifier. For example, Describe() and
@@ -35,7 +35,7 @@ func TestSetupAndExecution(t *testing.T) {
 // ================================================
 const defaultPassword = "password"
 const emptyString = ""
-const contentOne = "Bitcoin is Nick's favorite "
+const contentOne = "Bitcoin is Nick's favorite"
 const contentTwo = "digital "
 const contentThree = "cryptocurrency!"
 
@@ -52,7 +52,7 @@ var _ = Describe("Client Tests", func() {
 	var alice *client.User
 	var bob *client.User
 	var charles *client.User
-	// var doris *client.User
+	var doris *client.User
 	// var eve *client.User
 	// var frank *client.User
 	// var grace *client.User
@@ -70,7 +70,7 @@ var _ = Describe("Client Tests", func() {
 	aliceFile := "aliceFile.txt"
 	bobFile := "bobFile.txt"
 	charlesFile := "charlesFile.txt"
-	// dorisFile := "dorisFile.txt"
+	dorisFile := "dorisFile.txt"
 	// eveFile := "eveFile.txt"
 	// frankFile := "frankFile.txt"
 	// graceFile := "graceFile.txt"
@@ -262,11 +262,9 @@ var _ = Describe("Client Tests", func() {
 			userlib.DebugMsg("Initializing second user with same username")
 			charles, err = client.InitUser("alice", defaultPassword)
 			Expect(err).ToNot(BeNil())
-		})
 
-		Specify("Flag Test: Test Invalid UserInit 2", func() {
-			userlib.DebugMsg("Initializing alice with empty username")
-			alice, err = client.InitUser("", defaultPassword)
+			userlib.DebugMsg("Initializing bob with empty username")
+			bob, err = client.InitUser("", defaultPassword)
 			Expect(err).ToNot(BeNil())
 		})
 
@@ -274,9 +272,7 @@ var _ = Describe("Client Tests", func() {
 			userlib.DebugMsg("nonexistent user get")
 			charles, err = client.GetUser("ADSF", defaultPassword)
 			Expect(err).ToNot(BeNil())
-		})
-
-		Specify("Flag Test: Test Invalid GetUser 2", func() {
+		
 			userlib.DebugMsg("Initializing alice")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
@@ -286,7 +282,7 @@ var _ = Describe("Client Tests", func() {
 			Expect(err).ToNot(BeNil())
 		})
 
-		Specify("Flag Test: Test Modified Datastore User", func() {
+		Specify("Flag Test: Test GetUser on mod'd Datastore user struct", func() {
 			userlib.DebugMsg("initializing alice")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
@@ -310,20 +306,174 @@ var _ = Describe("Client Tests", func() {
 			charles, err = client.InitUser("charles", defaultPassword)
 			Expect(err).To(BeNil())
 
-			bob, err = client.GetUser("bob", defaultPassword)
-			Expect(err).To(BeNil())
-			charles, err = client.GetUser("charles", defaultPassword)
-			Expect(err).To(BeNil())
-
 			userlib.DebugMsg("Clearing datastore...")
 			userlib.DatastoreClear()
 
 			userlib.DebugMsg("Calling get user for bob and charles should err")
-			bob, err = client.GetUser("bob", defaultPassword)
+			_, err := client.GetUser("bob", defaultPassword)
 			Expect(err).ToNot(BeNil())
-			charles, err = client.GetUser("charles", defaultPassword)
+			_, err = client.GetUser("charles", defaultPassword)
 			Expect(err).ToNot(BeNil())
 		})
-		
+	})
+
+	var _ = Describe("Flag Tests - File Sharing/Revocation", func() {
+
+		Specify("Flag Test: Invalid CreateInvitations", func() {
+			userlib.DebugMsg("initializing Alice, Bob, Charles")
+			alice, err = client.InitUser("alice", defaultPassword)
+			Expect(err).To(BeNil())
+			bob, err = client.InitUser("bob", defaultPassword)
+			Expect(err).To(BeNil())
+			charles, err = client.InitUser("charles", defaultPassword)
+			Expect(err).To(BeNil())
+
+			userlib.DebugMsg("Alice creates aliceFile.txt")
+			alice.StoreFile(aliceFile, []byte(contentOne))
+
+			userlib.DebugMsg("Alice tries to share a nonexistent file to Bob")
+			var invite userlib.UUID
+			_, err = alice.CreateInvitation("asdfasdf", "bob")
+			Expect(err).ToNot(BeNil())
+
+			userlib.DebugMsg("Alice tries to share to a nonexistent user")
+			_, err = alice.CreateInvitation(aliceFile, "asdfadsf")
+			Expect(err).ToNot(BeNil())
+
+			userlib.DebugMsg("Alice shares to Bob, and Bob shares to Charles")
+			invite, _ = alice.CreateInvitation(aliceFile, "bob")
+			bob.AcceptInvitation("alice", invite, bobFile)
+			invite, err = bob.CreateInvitation(bobFile, "charles")
+			Expect(err).To(BeNil())
+			err = charles.AcceptInvitation("bob", invite, charlesFile)
+			Expect(err).To(BeNil())
+
+			userlib.DebugMsg("Charles appends to alice's file")
+			err = charles.AppendToFile(charlesFile, []byte(contentTwo))
+			Expect(err).To(BeNil())
+			data, err := bob.LoadFile(bobFile)
+			Expect(err).To(BeNil())
+			Expect(data).To(Equal([]byte(contentOne + contentTwo)))
+		})
+
+		Specify("Flag Test: Invalid AcceptInvitations", func() {
+			userlib.DebugMsg("initializing Alice, Bob, Charles, and Doris")
+			alice, err = client.InitUser("alice", defaultPassword)
+			Expect(err).To(BeNil())
+			bob, err = client.InitUser("bob", defaultPassword)
+			Expect(err).To(BeNil())
+			charles, err = client.InitUser("charles", defaultPassword)
+			Expect(err).To(BeNil())
+
+			userlib.DebugMsg("Alice and Bob both create a file called " + aliceFile)
+			alice.StoreFile(aliceFile, []byte(contentOne))
+			bob.StoreFile(aliceFile, []byte(contentTwo))
+			userlib.DebugMsg("Alice shares the file to Bob")
+			invite, _ := alice.CreateInvitation(aliceFile, "bob")
+			userlib.DebugMsg("Bob tries giving the file the name " + aliceFile)
+			err = bob.AcceptInvitation("alice", invite, aliceFile)
+			Expect(err).ToNot(BeNil())
+
+			userlib.DebugMsg("Mallory tries creating his own invitation, pretending to be alice")
+			charles.StoreFile(charlesFile, []byte(contentThree))
+			malloryInvitePtr, _ := charles.CreateInvitation(charlesFile, "bob")
+			malloryInvite, _ := userlib.DatastoreGet(malloryInvitePtr)
+			userlib.DebugMsg("Mallory places his invitation at the address of alice's invitiation")
+			userlib.DatastoreSet(invite, []byte(malloryInvite))
+			userlib.DebugMsg("Bob tries to accept alice's invitation, which now contains Mallory's invite")
+			err = bob.AcceptInvitation("alice", invite, bobFile+"2")
+			Expect(err).ToNot(BeNil()) //should fail at the signature check
+
+			userlib.DebugMsg("Alice tries again with a different file")
+			alice.StoreFile(aliceFile+"2", []byte(contentOne+"2"))
+			invite,_ = alice.CreateInvitation(aliceFile+"2", "bob")
+
+			userlib.DebugMsg("Mallory modifies everything on datastore")
+			datastore := userlib.DatastoreGetMap()
+			for k := range datastore {
+				userlib.DatastoreSet(k, userlib.RandomBytes(8))
+			}
+
+			err = bob.AcceptInvitation("alice", invite, bobFile+"3")
+			Expect(err).To(BeNil())
+
+		})
+
+		Specify("Flag Test: Revoke and Revoked Adversary", func() {
+			userlib.DebugMsg("initializing Alice, Bob, Charles")
+			alice, err = client.InitUser("alice", defaultPassword)
+			Expect(err).To(BeNil())
+			bob, err = client.InitUser("bob", defaultPassword)
+			Expect(err).To(BeNil())
+			charles, err = client.InitUser("charles", defaultPassword)
+			Expect(err).To(BeNil())
+			doris, err = client.InitUser("doris", defaultPassword)
+			Expect(err).To(BeNil())
+
+			userlib.DebugMsg("Alice shares a file with Bob")
+			alice.StoreFile(aliceFile, []byte(contentOne))
+			invite,_ :=alice.CreateInvitation(aliceFile, "bob")
+			userlib.DebugMsg("Doris tries to accept Alice's invite instead")
+			err = doris.AcceptInvitation("alice", invite, dorisFile)
+			Expect(err).ToNot(BeNil())
+			userlib.DebugMsg("Bob accepts Alice's invite, and posts the invite at some other uid of his choosing")
+			inviteContent,_ := userlib.DatastoreGet(invite)
+			copyInvite := uuid.New()
+			userlib.DatastoreSet(copyInvite, []byte(inviteContent))
+			bob.AcceptInvitation("alice", invite, bobFile);
+
+			userlib.DebugMsg("Alice shares a file with Charles")
+			invite,_ = alice.CreateInvitation(aliceFile, "charles")
+			userlib.DebugMsg("Charles accepts the invite, and remembers its uid")
+			charles.AcceptInvitation("alice", invite, charlesFile)
+			charlesInvite := invite
+
+			userlib.DebugMsg("Charles shares a file with Doris")
+			invite, _ = charles.CreateInvitation(charlesFile, "doris")
+			userlib.DebugMsg("Doris accepts Charles's invite, and remembers its uid")
+			err = doris.AcceptInvitation("charles", invite, dorisFile)
+			Expect(err).To(BeNil())
+			dorisInvite := invite
+
+			data, _ := doris.LoadFile(dorisFile)
+			Expect(data).To(Equal([]byte(contentOne)))
+			userlib.DebugMsg("Doris appends ContentTwo to the file")
+			doris.AppendToFile(dorisFile, []byte(contentTwo))
+			data, _ = bob.LoadFile(bobFile)
+			Expect(data).To(Equal([]byte(contentOne+contentTwo)))
+
+			userlib.DebugMsg("Alice revokes Charles's access to aliceFile")
+			err = alice.RevokeAccess(aliceFile, "charles")
+			Expect(err).To(BeNil())
+
+			userlib.DebugMsg("Charles tries to regain access via his remembered invite uid")
+			err = charles.AcceptInvitation("alice", charlesInvite, charlesFile+"2")
+			Expect(err).ToNot(BeNil())
+
+			userlib.DebugMsg("Doris tries to regain access via remembered invite from charles")
+			err = doris.AcceptInvitation("charles", dorisInvite, dorisFile+"2")
+			Expect(err).ToNot(BeNil())
+
+			userlib.DebugMsg("Doris and Charles try to append to the file")
+			err = charles.AppendToFile(charlesFile+"2", []byte(contentThree))
+			Expect(err).To(BeNil())
+			err = doris.AppendToFile(dorisFile+"2", []byte(contentThree))
+			Expect(err).To(BeNil())			
+
+			userlib.DebugMsg("Alice revokes Bob's access to aliceFile")
+			err = alice.RevokeAccess(aliceFile, "bob")
+			Expect(err).To(BeNil())
+
+			userlib.DebugMsg("Bob tries to regain access by accessing the copy invite he posted")
+			err = bob.AcceptInvitation("alice", copyInvite, bobFile+"2")
+			Expect(err).ToNot(BeNil())
+
+			userlib.DebugMsg("Bob tries to load the file")
+			_, err = bob.LoadFile(bobFile+"2")
+			Expect(err).ToNot(BeNil())
+
+			// what if charles remembers invitation uid and then tries to accept it again?
+			// what if bob datastore sets the invitation somewhere else (Creates his own invitation) and then accepts it after revoke?
+		})
 	})
 })
