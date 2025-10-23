@@ -252,24 +252,78 @@ var _ = Describe("Client Tests", func() {
 
 	})
 
-	var _ = Describe("Flag Tests", func() {
+	var _ = Describe("Flag Tests - User Auth", func() {
 
 		Specify("Flag Test: Test Invalid UserInit", func() {
 			userlib.DebugMsg("Initlalizing user Alice")
 			alice, err = client.InitUser("alice", defaultPassword)
-			Expect(err).To(BeNil());
+			Expect(err).To(BeNil())
 
 			userlib.DebugMsg("Initializing second user with same username")
-			charles, err = client.InitUser("alice", defaultPassword) 
-			Expect(err).ToNot(BeNil());
-		})
-
-		Specify("Flat Test: Test Invalid UserInit 2", func() {
-			userlib.DebugMsg("Initializing alice with empty username")
-			alice, err = client.InitUser("", defaultPassword) 
+			charles, err = client.InitUser("alice", defaultPassword)
 			Expect(err).ToNot(BeNil())
 		})
 
-		Specify()
+		Specify("Flag Test: Test Invalid UserInit 2", func() {
+			userlib.DebugMsg("Initializing alice with empty username")
+			alice, err = client.InitUser("", defaultPassword)
+			Expect(err).ToNot(BeNil())
+		})
+
+		Specify("Flag Test: Test Invalid GetUser 1", func() {
+			userlib.DebugMsg("nonexistent user get")
+			charles, err = client.GetUser("ADSF", defaultPassword)
+			Expect(err).ToNot(BeNil())
+		})
+
+		Specify("Flag Test: Test Invalid GetUser 2", func() {
+			userlib.DebugMsg("Initializing alice")
+			alice, err = client.InitUser("alice", defaultPassword)
+			Expect(err).To(BeNil())
+
+			userlib.DebugMsg("wrongPW login")
+			aliceLaptop, err = client.GetUser("alice", "wrongPassword")
+			Expect(err).ToNot(BeNil())
+		})
+
+		Specify("Flag Test: Test Modified Datastore User", func() {
+			userlib.DebugMsg("initializing alice")
+			alice, err = client.InitUser("alice", defaultPassword)
+			Expect(err).To(BeNil())
+
+			aliceDesktop, err = client.GetUser("alice", defaultPassword)
+			Expect(err).To(BeNil())
+
+			userlib.DebugMsg("modifying all of datastore...")
+			datastore := userlib.DatastoreGetMap()
+			for key := range datastore {
+				userlib.DatastoreSet(key, userlib.RandomBytes(8))
+			}
+
+			userlib.DebugMsg("calling getUser from aliceLaptop after modifying datastore")
+			aliceLaptop, err = client.GetUser("alice", defaultPassword)
+			Expect(err).ToNot(BeNil())
+
+			userlib.DebugMsg("initializing bob and charles")
+			bob, err = client.InitUser("bob", defaultPassword)
+			Expect(err).To(BeNil())
+			charles, err = client.InitUser("charles", defaultPassword)
+			Expect(err).To(BeNil())
+
+			bob, err = client.GetUser("bob", defaultPassword)
+			Expect(err).To(BeNil())
+			charles, err = client.GetUser("charles", defaultPassword)
+			Expect(err).To(BeNil())
+
+			userlib.DebugMsg("Clearing datastore...")
+			userlib.DatastoreClear()
+
+			userlib.DebugMsg("Calling get user for bob and charles should err")
+			bob, err = client.GetUser("bob", defaultPassword)
+			Expect(err).ToNot(BeNil())
+			charles, err = client.GetUser("charles", defaultPassword)
+			Expect(err).ToNot(BeNil())
+		})
+		
 	})
 })
