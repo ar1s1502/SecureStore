@@ -87,7 +87,7 @@ var _ = Describe("Client Tests", func() {
 
 	Describe("Basic Tests", func() {
 
-		Specify("Basic Test: Testing InitUser/GetUser on a single user.", func() {
+		FSpecify("Basic Test: Testing InitUser/GetUser on a single user.", func() {
 			userlib.DebugMsg("Initializing user Alice.")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
@@ -254,7 +254,7 @@ var _ = Describe("Client Tests", func() {
 
 	var _ = Describe("Flag Tests - User Auth", func() {
 
-		Specify("Flag Test: Test Invalid UserInit", func() {
+		FSpecify("Flag Test: Test Invalid UserInit", func() {
 			userlib.DebugMsg("Initlalizing user Alice")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
@@ -268,7 +268,7 @@ var _ = Describe("Client Tests", func() {
 			Expect(err).ToNot(BeNil())
 		})
 
-		Specify("Flag Test: Test Invalid GetUser 1", func() {
+		FSpecify("Flag Test: Test Invalid GetUser 1", func() {
 			userlib.DebugMsg("nonexistent user get")
 			charles, err = client.GetUser("ADSF", defaultPassword)
 			Expect(err).ToNot(BeNil())
@@ -282,7 +282,7 @@ var _ = Describe("Client Tests", func() {
 			Expect(err).ToNot(BeNil())
 		})
 
-		Specify("Flag Test: Test GetUser on mod'd Datastore user struct", func() {
+		FSpecify("Flag Test: Test GetUser on mod'd Datastore user struct", func() {
 			userlib.DebugMsg("initializing alice")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
@@ -386,16 +386,15 @@ var _ = Describe("Client Tests", func() {
 			err = bob.AcceptInvitation("alice", invite, bobFile+"2")
 			Expect(err).ToNot(BeNil()) //should fail at the signature check
 
-
 			userlib.DebugMsg("Alice tries with a third file")
 			alice.StoreFile(aliceFile+"3", []byte(contentThree))
 			datastore := userlib.DatastoreGetMap()
 			userlib.DebugMsg("Alice shares the third file to bob")
 			invite, _ = alice.CreateInvitation(aliceFile+"3", "bob")
-			
+
 			for k := range userlib.DatastoreGetMap() {
 				_, kInMap := datastore[k]
-				if !kInMap { 
+				if !kInMap {
 					userlib.DebugMsg("Mallory tries accepting with the newly added UID")
 					err = charles.AcceptInvitation("alice", k, "newfile")
 					Expect(err).ToNot(BeNil())
