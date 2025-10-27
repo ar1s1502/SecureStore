@@ -364,6 +364,8 @@ var _ = Describe("Client Tests", func() {
 			Expect(err).To(BeNil())
 			charles, err = client.InitUser("charles", defaultPassword)
 			Expect(err).To(BeNil())
+			doris, err = client.InitUser("doris", defaultPassword)
+			Expect(err).To(BeNil())
 
 			userlib.DebugMsg("Alice and Bob both create a file called " + aliceFile)
 			alice.StoreFile(aliceFile, []byte(contentOne))
@@ -384,23 +386,63 @@ var _ = Describe("Client Tests", func() {
 			err = bob.AcceptInvitation("alice", invite, bobFile+"2")
 			Expect(err).ToNot(BeNil()) //should fail at the signature check
 
+
+			userlib.DebugMsg("Alice tries with a third file")
+			alice.StoreFile(aliceFile+"3", []byte(contentThree))
+			datastore := userlib.DatastoreGetMap()
+			userlib.DebugMsg("Alice shares the third file to bob")
+			invite, _ = alice.CreateInvitation(aliceFile+"3", "bob")
+			
+			for k := range userlib.DatastoreGetMap() {
+				_, kInMap := datastore[k]
+				if !kInMap { 
+					userlib.DebugMsg("Mallory tries accepting with the newly added UID")
+					err = charles.AcceptInvitation("alice", k, "newfile")
+					Expect(err).ToNot(BeNil())
+					_, err = charles.LoadFile("newfile")
+					Expect(err).ToNot(BeNil())
+					userlib.DebugMsg("Mallory tries modifying the data at the UID instead")
+					userlib.DatastoreSet(k, []byte("malicious content"))
+				}
+			}
+
+			userlib.DebugMsg("Bob should detect the tampering by Mallory")
+			err = bob.AcceptInvitation("alice", invite, bobFile+"4")
+			Expect(err).ToNot(BeNil())
+
+			userlib.DebugMsg("Alice tries again, this time sharing it to bob and doris")
+			invite, _ = alice.CreateInvitation(aliceFile+"3", "bob")
+			invite2, _ := alice.CreateInvitation(aliceFile+"3", "doris")
+
+			userlib.DebugMsg("Mallory tries to swap the two invitations")
+			dorisInvite, ok := userlib.DatastoreGet(invite2)
+			Expect(ok).To(BeTrue())
+			bobInvite, ok := userlib.DatastoreGet(invite)
+			Expect(ok).To(BeTrue())
+			userlib.DatastoreSet(invite, dorisInvite)
+			userlib.DatastoreSet(invite2, bobInvite)
+
+			userlib.DebugMsg("Bob and Doris should detect the swap tampering")
+			err = bob.AcceptInvitation("alice", invite, bobFile+"4")
+			Expect(err).ToNot(BeNil())
+			err = doris.AcceptInvitation("alice", invite2, dorisFile)
+
 			userlib.DebugMsg("Alice tries again with a different file")
 			alice.StoreFile(aliceFile+"2", []byte(contentOne+"2"))
 			invite, _ = alice.CreateInvitation(aliceFile+"2", "bob")
 
 			userlib.DebugMsg("Mallory modifies everything on datastore")
-			datastore := userlib.DatastoreGetMap()
+			datastore = userlib.DatastoreGetMap()
 			for k := range datastore {
 				userlib.DatastoreSet(k, userlib.RandomBytes(8))
 			}
 
 			err = bob.AcceptInvitation("alice", invite, bobFile+"3")
 			Expect(err).To(BeNil())
-
 		})
 
 		Specify("Flag Test: Revoke and Revoked Adversary", func() {
-			userlib.DebugMsg("initializing Alice, Bob, Charles")
+			userlib.DebugMsg("initializing Alice, Bob, Charles, Doris")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
 			bob, err = client.InitUser("bob", defaultPassword)

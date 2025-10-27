@@ -18,16 +18,21 @@ package client
 // integration tests (client_test.go). In other words, the "client." in front is no longer needed.
 
 import (
-	userlib "github.com/cs161-staff/project2-userlib"
+	"fmt"
 	"testing"
-)
 
-import (
+	userlib "github.com/cs161-staff/project2-userlib"
+
 	_ "encoding/hex"
+
 	_ "errors"
+
 	. "github.com/onsi/ginkgo/v2"
+
 	. "github.com/onsi/gomega"
+
 	_ "strconv"
+
 	_ "strings"
 )
 
@@ -43,6 +48,12 @@ var _ = Describe("Client Unit Tests", func() {
 		userlib.KeystoreClear()
 	})
 
+	const defaultPassword = "password"
+	const username = "alice"
+	const plaintext = "plaintext"
+	const salt = "salt"
+	const keyLen = 16
+
 	Describe("Unit Tests", func() {
 		Specify("Basic Test: Check that the Username field is set for a new user", func() {
 			userlib.DebugMsg("Initializing user Alice.")
@@ -55,6 +66,17 @@ var _ = Describe("Client Unit Tests", func() {
 			// But in the integration tests (client_test.go), you cannot access
 			// struct fields because not all implementations will have a username field.
 			Expect(alice.Username).To(Equal("alice"))
+		})
+
+		Specify("Test SymmKey Encryption/Decryption:", func(){
+			key1 := userlib.Argon2Key([]byte(defaultPassword), []byte(salt), keyLen)
+			key2, _ := userlib.HashKDF(key1, []byte("HMAC"))
+			iv := userlib.RandomBytes(16)
+			enc := userlib.SymEnc(key1, iv, []byte(plaintext))
+			tag,_ := userlib.HMACEval(key2, enc)
+			ciphertext := append(tag, enc...)
+			fmt.Printf("ciphertext = %v", ciphertext)
+			Expect(ciphertext).To(Equal(EncryptThenMac(key1, key2, []byte(plaintext), []byte(salt))))
 		})
 	})
 })

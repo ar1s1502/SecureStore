@@ -110,6 +110,11 @@ func someUsefulThings() {
 // (e.g. like the Username attribute) and methods (e.g. like the StoreFile method below).
 type User struct {
 	Username string
+	UID userlib.UUID
+	password []byte
+	sourcekey []byte
+	PrivKey userlib.PKEDecKey
+	SignKey userlib.DSSignKey
 
 	// You can add other attributes here if you want! But note that in order for attributes to
 	// be included when this struct is serialized to/from JSON, they must be capitalized.
@@ -120,6 +125,14 @@ type User struct {
 }
 
 // NOTE: The following methods have toy (insecure!) implementations.
+
+func EncryptThenMac(key1 []byte, key2 []byte, content[]byte, salt []byte ) (ciphertext []byte) {
+	return 
+ }
+
+ func MacThenDecrypt(key1 []byte, key2 []byte, ciphertext []byte, salt []byte) (err error, content []byte) {
+	return
+ }
 
 func InitUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
