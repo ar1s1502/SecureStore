@@ -183,7 +183,6 @@ func EncryptThenSign(encKey userlib.PKEEncKey, signKey userlib.DSSignKey, plaint
 	if err != nil {
 		return
 	}
-
 	ciphertext, err = userlib.PKEEnc(encKey, plaintextBytes)
 	if err != nil {
 		return

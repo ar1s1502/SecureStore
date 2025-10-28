@@ -8,6 +8,7 @@ import (
 	// about unused imports.
 	_ "encoding/hex"
 	_ "errors"
+	"strconv"
 	_ "strconv"
 	_ "strings"
 	"testing"
@@ -87,7 +88,7 @@ var _ = Describe("Client Tests", func() {
 
 	Describe("Basic Tests", func() {
 
-		FSpecify("Basic Test: Testing InitUser/GetUser on a single user.", func() {
+		Specify("Basic Test: Testing InitUser/GetUser on a single user.", func() {
 			userlib.DebugMsg("Initializing user Alice.")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
@@ -254,7 +255,7 @@ var _ = Describe("Client Tests", func() {
 
 	var _ = Describe("Flag Tests - User Auth", func() {
 
-		FSpecify("Flag Test: Test Invalid UserInit", func() {
+		Specify("Flag Test: Test Invalid UserInit", func() {
 			userlib.DebugMsg("Initlalizing user Alice")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
@@ -268,7 +269,7 @@ var _ = Describe("Client Tests", func() {
 			Expect(err).ToNot(BeNil())
 		})
 
-		FSpecify("Flag Test: Test Invalid GetUser 1", func() {
+		Specify("Flag Test: Test Invalid GetUser 1", func() {
 			userlib.DebugMsg("nonexistent user get")
 			charles, err = client.GetUser("ADSF", defaultPassword)
 			Expect(err).ToNot(BeNil())
@@ -282,7 +283,7 @@ var _ = Describe("Client Tests", func() {
 			Expect(err).ToNot(BeNil())
 		})
 
-		FSpecify("Flag Test: Test GetUser on mod'd Datastore user struct", func() {
+		Specify("Flag Test: Test GetUser on mod'd Datastore user struct", func() {
 			userlib.DebugMsg("initializing alice")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
@@ -439,6 +440,65 @@ var _ = Describe("Client Tests", func() {
 			err = bob.AcceptInvitation("alice", invite, bobFile+"3")
 			Expect(err).To(BeNil())
 		})
+
+		// Test 2: Test file overwrite, append, and multi-section file handling
+		Specify("File Operations: Overwrite, append, and error handling", func() {
+			// clear()
+			
+		
+			bob, err := client.InitUser("bob", "password123")
+			Expect(err).To(BeNil())
+			
+			initialContent := []byte("Initial content")
+			err = bob.StoreFile("myfile.txt", initialContent)
+			Expect(err).To(BeNil())
+			
+			
+			loadedContent, err := bob.LoadFile("myfile.txt")
+			Expect(err).To(BeNil())
+			Expect(loadedContent).To(Equal(initialContent))
+			
+			
+			newContent := []byte("Completely new content that replaces the old one")
+			err = bob.StoreFile("myfile.txt", newContent)
+			Expect(err).To(BeNil())
+			
+			
+			loadedContent, err = bob.LoadFile("myfile.txt")
+			Expect(err).To(BeNil())
+			Expect(loadedContent).To(Equal(newContent))
+			
+			
+			appendContent := []byte(" - This is appended text")
+			err = bob.AppendToFile("myfile.txt", appendContent)
+			Expect(err).To(BeNil())
+			
+			
+			expectedContent := append(newContent, appendContent...)
+			loadedContent, err = bob.LoadFile("myfile.txt")
+			Expect(err).To(BeNil())
+			Expect(loadedContent).To(Equal(expectedContent))
+			
+		
+			for i := 0; i < 5; i++ {
+				appendText := []byte("Append "+ strconv.Itoa(i))
+				err = bob.AppendToFile("myfile.txt", appendText)
+				Expect(err).To(BeNil())
+				expectedContent = append(expectedContent, appendText...)
+			}
+			
+			loadedContent, err = bob.LoadFile("myfile.txt")
+			Expect(err).To(BeNil())
+			Expect(loadedContent).To(Equal(expectedContent))
+			
+
+			err = bob.AppendToFile("nonexistent.txt", []byte("test"))
+			Expect(err).ToNot(BeNil(), "AppendToFile should fail on non-existent file")
+
+			_, err = bob.LoadFile("anothernonexistent.txt")
+			Expect(err).ToNot(BeNil(), "LoadFile should fail on non-existent file")
+		})
+
 
 		Specify("Flag Test: Revoke and Revoked Adversary", func() {
 			userlib.DebugMsg("initializing Alice, Bob, Charles, Doris")
