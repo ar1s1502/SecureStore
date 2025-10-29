@@ -98,7 +98,7 @@ var _ = Describe("Client Tests", func() {
 			Expect(err).To(BeNil())
 		})
 
-		Specify("Basic Test: Testing Single User Store/Load/Append.", func() {
+		FSpecify("Basic Test: Testing Single User Store/Load/Append.", func() {
 			userlib.DebugMsg("Initializing user Alice.")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
