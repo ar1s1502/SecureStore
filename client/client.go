@@ -342,7 +342,6 @@ func (userdata *User) StoreFile(filename string, content []byte) (err error) {
 	// prevUID := headUID
 	// sectionNumber += 1
 
-
 	var sectionNumber int
 	var prevUID userlib.UUID
 
@@ -384,16 +383,26 @@ func (userdata *User) StoreFile(filename string, content []byte) (err error) {
 	if ok {
 		//traverse the linked list and delete everything before creating file
 	} else {
-		//make new sentinel. User is owner.
-		var sentinel Sentinel
-		sentinel.fileTail = tailUID
-		sentinel.key1 = key1
-		sentinel.key2 = key2
+		//make new sentinels. User is owner.
+		var groupSentinel GroupSentinel
+		uidString := fmt.Sprintf("%v", tailUID)
+		groupSentUID, _ := uuid.FromBytes(userlib.Hash([]byte(userdata.Username + string(userdata.password) + uidString))[0:16])
+		groupSentinel.fileTail = tailUID
+		groupSentinel.key1 = key1
+		groupSentinel.key2 = key2
+		pubKey, privKey, _ := userlib.PKEKeyGen()
+		err = userlib.KeystoreSet(uidString+userdata.Username+"Group", pubKey)
+		ciphertext = EncryptThenSign(pubKey, userdata.SignKey, groupSentinel)
+		userlib.DatastoreSet(groupSentUID, ciphertext)
+		var userSent Sentinel
+		userSent.groupDecKey = privKey
+		userSent.groupUID = groupSentUID
 		sentinelKey1, _ := userlib.HashKDF(userdata.sourceKey, []byte(filename))
 		sentinelKey2, _ := userlib.HashKDF(sentinelKey1, []byte("HMAC "+filename))
 		iv := userlib.RandomBytes(16)
 		ciphertext = EncryptThenMac(sentinelKey1, iv, sentinelKey2, sentinel)
 		userlib.DatastoreSet(sentinelUID, ciphertext)
+
 	}
 	return
 }
