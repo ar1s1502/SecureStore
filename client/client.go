@@ -129,10 +129,10 @@ type User struct {
 }
 
 type File struct {
-	Next    userlib.UUID
+	Next       userlib.UUID
 	NextSymKey []byte
 	NextMacKey []byte
-	Content []byte
+	Content    []byte
 }
 
 type GroupSentinel struct {
@@ -345,10 +345,13 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	return userdataptr, nil
 }
 
-func makeFile(filename string, content []byte, userdata *User, symkey0 []byte, mackey0 []byte) (tailCipher []byte, err error) {
-	sectionNumber := len(content) / fileSize
+func makeFile(filename string, content []byte, userdata *User, symkeytail []byte, mackeytail []byte,
+	oldTailKey []byte, oldTailMac []byte, oldTailUID userlib.UUID) (tailCipher []byte, err error) {
+
 	var prevUID userlib.UUID
-	nilUID, _ := uuid.FromBytes(make([]byte, 16))
+	var prevSymKey []byte
+	var prevMacKey []byte
+	var i int
 
 	// sectionSymKeys := make([][]byte, sectionNumber+1)
 	// sectionMacKeys := make([][]byte, sectionNumber+1)
@@ -364,42 +367,43 @@ func makeFile(filename string, content []byte, userdata *User, symkey0 []byte, m
 	// 	sectionMacKeys[i], _ = userlib.HashKDF(sectionSymKeys[i-1], []byte("HMAC"+strconv.Itoa(i)))
 	// 	sectionMacKeys[i] = sectionMacKeys[i][:keyLen]
 	// }
-
-
 	for len(content) > fileSize {
 		var section File
 		sectionUID := uuid.New()
-		if sectionNumber == 0 {
-			section.Next = nilUID
-			section.NextSymKey = nil
-			section.NextMacKey = nil
+		if i == 0 {
+			section.Next = oldTailUID
+			section.NextSymKey = oldTailKey
+			section.NextMacKey = oldTailMac
 		} else {
 			section.Next = prevUID
+			section.NextSymKey = prevSymKey
+			section.NextMacKey = prevMacKey
 		}
 		section.Content = content[:fileSize]
-		//DatastoreSet the section
+		key1, _ := userlib.HashKDF(userdata.sourceKey, userlib.RandomBytes(4))
+		key1 = key1[:keyLen]
+		key2, _ := userlib.HashKDF(key1, userlib.RandomBytes(4))
+		key2 = key2[:keyLen]
 		iv := userlib.RandomBytes(16)
-		ciphertext := EncryptThenMac(sectionSymKeys[sectionNumber], iv, sectionMacKeys[sectionNumber], section)
+		ciphertext := EncryptThenMac(key1, iv, key2, section)
 		userlib.DatastoreSet(sectionUID, ciphertext)
 		content = content[fileSize:]
 		prevUID = sectionUID
-		prevSymKey = 
-		sectionNumber -= 1
+		prevSymKey = key1
+		prevMacKey = key2
+		i += 1
 	}
 
 	var tail File
 	tail.Next = prevUID
 	tail.Content = content
-	if sectionNumber != 0 {
-		err = errors.New("tail section number should be 0")
-		return
-	}
 	iv := userlib.RandomBytes(16)
-	tailCipher = EncryptThenMac(sectionSymKeys[sectionNumber], iv, sectionMacKeys[sectionNumber], tail)
+	tailCipher = EncryptThenMac(symkeytail, iv, mackeytail, tail)
 	return tailCipher, nil
 }
 
 func (userdata *User) StoreFile(filename string, content []byte) (err error) {
+	nilUID, _ := uuid.FromBytes(make([]byte, 16))
 	sentinelUID, err := uuid.FromBytes(userlib.Hash([]byte(filename + "/" + userdata.Username))[:16])
 	if err != nil {
 		return err
@@ -417,7 +421,7 @@ func (userdata *User) StoreFile(filename string, content []byte) (err error) {
 			return
 		}
 		fileuid := groupSent.FileTail
-		tailCipher, err := makeFile(filename, content, userdata, groupSent.Key1, groupSent.Key2)
+		tailCipher, err := makeFile(filename, content, userdata, groupSent.Key1, groupSent.Key2, nil, nil, nilUID)
 		if err != nil {
 			return err
 		}
@@ -431,7 +435,7 @@ func (userdata *User) StoreFile(filename string, content []byte) (err error) {
 		mackey0, _ := userlib.HashKDF(symkey0, []byte("HMAC"+strconv.Itoa(0)))
 		mackey0 = mackey0[:keyLen]
 		var tailCipher []byte
-		tailCipher, err = makeFile(filename, content, userdata, symkey0, mackey0)
+		tailCipher, err = makeFile(filename, content, userdata, symkey0, mackey0, nil, nil, nilUID)
 		if err != nil {
 			return
 		}
@@ -477,13 +481,22 @@ func (userdata *User) AppendToFile(filename string, content []byte) (err error) 
 	if err != nil {return}
 	ciphertext, ok := userlib.DatastoreGet(sentinelUID)
 	if !ok {
-		err = errors.New("Requested user sentinel doesn't exist")
+		err = errors.New("requested user sentinel doesn't exist")
 		return
 	}
 	groupSent, err := getFileKeys(sentinelKey1, sentinelKey2, ciphertext)
-	tailCipher, err := makeFile(filename, content, userdata, groupSent.Key1, groupSent.Key2)
+	if err != nil {return}
+	tailSymKey, _ := userlib.HashKDF(userdata.sourceKey, userlib.RandomBytes(4))
+	tailSymKey = tailSymKey[:16]
+	tailMacKey, _ := userlib.HashKDF(tailSymKey, userlib.RandomBytes(4))
+	tailMacKey = tailMacKey[:16]
+	tailCipher, err := makeFile(filename, content, userdata, tailSymKey, tailMacKey, groupSent.Key1, groupSent.Key2, groupSent.FileTail)
 	if err != nil {return }
-
+	newTailUID := uuid.New()
+	userlib.DatastoreSet(newTailUID, tailCipher)
+	groupSent.Key1 = tailSymKey
+	groupSent.Key2 = tailMacKey
+	groupSent.FileTail = newTailUID
 	return nil
 }
 
