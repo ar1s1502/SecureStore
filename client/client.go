@@ -131,18 +131,20 @@ type User struct {
 }
 
 type File struct {
-	next    userlib.UUID
-	content []byte
+	Next    userlib.UUID
+	Content []byte
 }
 
 type GroupSentinel struct {
-	fileTail userlib.UUID
-	key1 []byte
-	key2 []byte
+	FileTail userlib.UUID
+	Key1 []byte
+	Key2 []byte
+	Owner string
 }
 type Sentinel struct {
-	groupUID userlib.UUID
-	groupDecKey userlib.PKEDecKey
+	GroupUID userlib.UUID
+	GroupDecKey userlib.PKEDecKey
+	CoOwner string
 }
 
 // HELPERS
@@ -316,95 +318,131 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	return userdataptr, nil
 }
 
+
+func makeFile(filename string, content []byte, userdata *User, symkey0 []byte, mackey0 []byte) (tailCipher []byte, err error) {
+	sectionNumber := len(content) / fileSize
+	var prevUID userlib.UUID
+
+	sectionSymKeys := make([][]byte, sectionNumber + 1)
+	sectionMacKeys := make([][]byte, sectionNumber + 1)
+	if (len(symkey0) != 16) || (len(mackey0) != 16) {
+		err = errors.New("invalid symm keys")
+		return 
+	}
+	sectionSymKeys[0] = symkey0
+	sectionMacKeys[0] = mackey0
+	for i := 1; i < len(sectionSymKeys); i++ {
+		sectionSymKeys[i],_ = userlib.HashKDF(sectionSymKeys[i-1], []byte(filename + userdata.Username + strconv.Itoa(i)))
+		sectionMacKeys[i],_ = userlib.HashKDF(sectionSymKeys[i-1], []byte("HMAC"+strconv.Itoa(i)))
+	} 
+
+	for (len(content) > fileSize) {
+		var section File
+		sectionUID := uuid.New()
+		if (sectionNumber == 0) {
+			section.Next = nilUID
+		} else {
+			section.Next = prevUID
+		}
+		section.Content = content[:fileSize]
+		//DatastoreSet the section
+		iv := userlib.RandomBytes(16)
+		ciphertext := EncryptThenMac(sectionSymKeys[sectionNumber], iv, sectionMacKeys[sectionNumber], section)
+		userlib.DatastoreSet(sectionUID, ciphertext)
+		content = content[fileSize:]
+		prevUID = sectionUID
+		sectionNumber -= 1
+	}
+
+	var tail File
+	tail.Next = prevUID
+	tail.Content = content
+	if (sectionNumber != 0) {
+		err = errors.New("tail section number should be 0")
+		return
+	}
+	// key1Purpose := []byte(filename + userdata.Username + strconv.Itoa(sectionNumber))
+	// key1, _ := userlib.HashKDF(userdata.sourceKey, key1Purpose)
+	// key2Purpose := []byte("HMAC" + strconv.Itoa(sectionNumber))
+	// key2, _ := userlib.HashKDF(key1, key2Purpose)
+	iv := userlib.RandomBytes(16)
+	tailCipher = EncryptThenMac(sectionSymKeys[sectionNumber], iv, sectionMacKeys[sectionNumber], tail)
+	return tailCipher, nil
+}
+
 func (userdata *User) StoreFile(filename string, content []byte) (err error) {
 	sentinelUID, err := uuid.FromBytes(userlib.Hash([]byte(filename + "/" + userdata.Username))[:16])
 	if err != nil {
 		return err
 	}
 
-	// var head File
-	// var sectionNumber uint
-	// headUID := uuid.New()
-	// head.next = nilUID
-	// if (len(content) < fileSize) {
-	// 	head.content = content
-	// } else {
-	// 	head.content = content[:fileSize]
-	// 	content = content[fileSize:]
-	// }
-	// key1Purpose := []byte(filename + userdata.Username + strconv.Itoa(int(sectionNumber)))
-	// key1, _ := userlib.HashKDF(userdata.sourceKey, key1Purpose)
-	// key2Purpose := []byte("HMAC" + strconv.Itoa(int(sectionNumber)))
-	// key2, _ := userlib.HashKDF(key1, key2Purpose)
-	// iv := userlib.RandomBytes(16)
-	// ciphertext := EncryptThenMac(key1, iv, key2, head)
-	// userlib.DatastoreSet(headUID, ciphertext)
-	// prevUID := headUID
-	// sectionNumber += 1
-
-	var sectionNumber int
-	var prevUID userlib.UUID
-
-	for (len(content) > fileSize) {
-		var section File
-		sectionUID := uuid.New()
-		if (sectionNumber == 0) {
-			section.next = nilUID
-		} else {
-			section.next = prevUID
-		}
-		section.content = content[:fileSize]
-		//DatastoreSet the section
-		key1Purpose := []byte(filename + userdata.Username + strconv.Itoa(sectionNumber))
-		key1, _ := userlib.HashKDF(userdata.sourceKey, key1Purpose)
-		key2Purpose := []byte("HMAC" + strconv.Itoa(sectionNumber))
-		key2, _ := userlib.HashKDF(key1, key2Purpose)
-		iv := userlib.RandomBytes(16)
-		ciphertext := EncryptThenMac(key1, iv, key2, section)
-		userlib.DatastoreSet(sectionUID, ciphertext)
-		content = content[fileSize:]
-		prevUID = sectionUID
-		sectionNumber += 1
-	}
-
-	var tail File
-	tailUID := uuid.New()
-	tail.next = prevUID
-	tail.content = content
-	key1Purpose := []byte(filename + userdata.Username + strconv.Itoa(sectionNumber))
-	key1, _ := userlib.HashKDF(userdata.sourceKey, key1Purpose)
-	key2Purpose := []byte("HMAC" + strconv.Itoa(sectionNumber))
-	key2, _ := userlib.HashKDF(key1, key2Purpose)
-	iv := userlib.RandomBytes(16)
-	ciphertext := EncryptThenMac(key1, iv, key2, tail)
-	userlib.DatastoreSet(tailUID, ciphertext)
-
-	sentinel, ok := userlib.DatastoreGet(sentinelUID)
+	ciphertext, ok := userlib.DatastoreGet(sentinelUID)
 	if ok {
-		//traverse the linked list and delete everything before creating file
+		var privSent Sentinel
+		ptr := &privSent
+		sentinelKey1, _ := userlib.HashKDF(userdata.sourceKey, []byte(filename))
+		sentinelKey2, _ := userlib.HashKDF(sentinelKey1, []byte("HMAC"+filename))
+		err = MacThenDecrypt(sentinelKey1, sentinelKey2, ciphertext, ptr)
+		if err != nil {return}
+
+		var groupSent GroupSentinel
+		ptr2 := &groupSent
+		ciphertext, ok = userlib.DatastoreGet(privSent.GroupUID)
+		if !ok {
+			err = errors.New("couldn't find group sentinel")
+			return
+		}
+		uidString := fmt.Sprintf("%v", privSent.GroupUID)
+		verifyKey, ok := userlib.KeystoreGet(uidString+privSent.CoOwner+"Group")
+		if !ok {
+			err = errors.New("couldn't find verification Key for group sentinel")
+			return
+		}
+		err = VerifyThenDecrypt(privSent.GroupDecKey, verifyKey, ciphertext, ptr2)
+		if err != nil {
+			return 
+		}
+		uid := groupSent.FileTail
+		tailCipher, err := makeFile(filename, content, userdata, groupSent.Key1, groupSent.Key2)
+		if err != nil {return err}
+		userlib.DatastoreSet(uid, tailCipher)
+
 	} else {
 		//make new sentinels. User is owner.
-		var groupSentinel GroupSentinel
+		tailUID := uuid.New()
+		symkey0,_ := userlib.HashKDF(userdata.sourceKey, []byte(filename + userdata.Username + strconv.Itoa(0)))
+		mackey0,_ := userlib.HashKDF(symkey0, []byte("HMAC"+strconv.Itoa(0)))
+		tailCipher, err := makeFile(filename, content, userdata, symkey0, mackey0)
+		if (err != nil) {
+			return err
+		}
+		userlib.DatastoreSet(tailUID, tailCipher)
+		//setting groupSentinel
+		var groupSentinel GroupSentinel //groupsentinel where group = owner only
 		uidString := fmt.Sprintf("%v", tailUID)
 		groupSentUID, _ := uuid.FromBytes(userlib.Hash([]byte(userdata.Username + string(userdata.password) + uidString))[0:16])
-		groupSentinel.fileTail = tailUID
-		groupSentinel.key1 = key1
-		groupSentinel.key2 = key2
+		uidString = fmt.Sprintf("%v", groupSentUID)
+		groupSentinel.FileTail = tailUID
+		groupSentinel.Key1 = symkey0
+		groupSentinel.Key2 = mackey0
+		groupSentinel.Owner = userdata.Username
 		pubKey, privKey, _ := userlib.PKEKeyGen()
-		err = userlib.KeystoreSet(uidString+userdata.Username+"Group", pubKey)
+		err = userlib.KeystoreSet(uidString+groupSentinel.Owner+"Group", pubKey)
 		ciphertext = EncryptThenSign(pubKey, userdata.SignKey, groupSentinel)
 		userlib.DatastoreSet(groupSentUID, ciphertext)
+		//setting privateSentinel
 		var userSent Sentinel
-		userSent.groupDecKey = privKey
-		userSent.groupUID = groupSentUID
+		userSent.GroupDecKey = privKey
+		userSent.GroupUID = groupSentUID
+		userSent.CoOwner = userdata.Username
 		sentinelKey1, _ := userlib.HashKDF(userdata.sourceKey, []byte(filename))
-		sentinelKey2, _ := userlib.HashKDF(sentinelKey1, []byte("HMAC "+filename))
+		sentinelKey2, _ := userlib.HashKDF(sentinelKey1, []byte("HMAC"+filename))
 		iv := userlib.RandomBytes(16)
-		ciphertext = EncryptThenMac(sentinelKey1, iv, sentinelKey2, sentinel)
+		ciphertext = EncryptThenMac(sentinelKey1, iv, sentinelKey2, userSent)
 		userlib.DatastoreSet(sentinelUID, ciphertext)
 
 	}
-	return
+	return nil
 }
 
 func (userdata *User) AppendToFile(filename string, content []byte) error {
