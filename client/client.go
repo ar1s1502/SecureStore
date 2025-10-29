@@ -16,6 +16,7 @@ package client
 
 import (
 	"encoding/json"
+	"strconv"
 
 	userlib "github.com/cs161-staff/project2-userlib"
 	"github.com/google/uuid"
@@ -108,6 +109,7 @@ func someUsefulThings() {
 // Useful const's
 const keyLen = 16
 const fileSize = 512
+const nilUID = uuid.FromBytes(make([]int, 16))
 
 // This is the type definition for the User struct.
 // A Go struct is like a Python or Java class - it can have attributes
@@ -128,15 +130,20 @@ type User struct {
 	// begins with a lowercase letter).
 }
 
-// type FileHead struct {
-// 	next    *File
-// 	tail    *File
-// 	content []byte
-// }
-// type File struct {
-// 	next    *File
-// 	content []byte
-// }
+type File struct {
+	next    userlib.UUID
+	content []byte
+}
+
+type GroupSentinel struct {
+	fileTail userlib.UUID
+	key1 []byte
+	key2 []byte
+}
+type Sentinel struct {
+	groupUID userlib.UUID
+	groupDecKey userlib.PKEDecKey
+}
 
 // HELPERS
 func catchError(err *error, msg string) (failure bool) {
@@ -310,15 +317,84 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 }
 
 func (userdata *User) StoreFile(filename string, content []byte) (err error) {
-	storageKey, err := uuid.FromBytes(userlib.Hash([]byte(filename + userdata.Username))[:16])
+	sentinelUID, err := uuid.FromBytes(userlib.Hash([]byte(filename + "/" + userdata.Username))[:16])
 	if err != nil {
 		return err
 	}
-	contentBytes, err := json.Marshal(content)
-	if err != nil {
-		return err
+
+	// var head File
+	// var sectionNumber uint
+	// headUID := uuid.New()
+	// head.next = nilUID
+	// if (len(content) < fileSize) {
+	// 	head.content = content
+	// } else {
+	// 	head.content = content[:fileSize]
+	// 	content = content[fileSize:]
+	// }
+	// key1Purpose := []byte(filename + userdata.Username + strconv.Itoa(int(sectionNumber)))
+	// key1, _ := userlib.HashKDF(userdata.sourceKey, key1Purpose)
+	// key2Purpose := []byte("HMAC" + strconv.Itoa(int(sectionNumber)))
+	// key2, _ := userlib.HashKDF(key1, key2Purpose)
+	// iv := userlib.RandomBytes(16)
+	// ciphertext := EncryptThenMac(key1, iv, key2, head)
+	// userlib.DatastoreSet(headUID, ciphertext)
+	// prevUID := headUID
+	// sectionNumber += 1
+
+
+	var sectionNumber int
+	var prevUID userlib.UUID
+
+	for (len(content) > fileSize) {
+		var section File
+		sectionUID := uuid.New()
+		if (sectionNumber == 0) {
+			section.next = nilUID
+		} else {
+			section.next = prevUID
+		}
+		section.content = content[:fileSize]
+		//DatastoreSet the section
+		key1Purpose := []byte(filename + userdata.Username + strconv.Itoa(sectionNumber))
+		key1, _ := userlib.HashKDF(userdata.sourceKey, key1Purpose)
+		key2Purpose := []byte("HMAC" + strconv.Itoa(sectionNumber))
+		key2, _ := userlib.HashKDF(key1, key2Purpose)
+		iv := userlib.RandomBytes(16)
+		ciphertext := EncryptThenMac(key1, iv, key2, section)
+		userlib.DatastoreSet(sectionUID, ciphertext)
+		content = content[fileSize:]
+		prevUID = sectionUID
+		sectionNumber += 1
 	}
-	userlib.DatastoreSet(storageKey, contentBytes)
+
+	var tail File
+	tailUID := uuid.New()
+	tail.next = prevUID
+	tail.content = content
+	key1Purpose := []byte(filename + userdata.Username + strconv.Itoa(sectionNumber))
+	key1, _ := userlib.HashKDF(userdata.sourceKey, key1Purpose)
+	key2Purpose := []byte("HMAC" + strconv.Itoa(sectionNumber))
+	key2, _ := userlib.HashKDF(key1, key2Purpose)
+	iv := userlib.RandomBytes(16)
+	ciphertext := EncryptThenMac(key1, iv, key2, tail)
+	userlib.DatastoreSet(tailUID, ciphertext)
+
+	sentinel, ok := userlib.DatastoreGet(sentinelUID)
+	if ok {
+		//traverse the linked list and delete everything before creating file
+	} else {
+		//make new sentinel. User is owner.
+		var sentinel Sentinel
+		sentinel.fileTail = tailUID
+		sentinel.key1 = key1
+		sentinel.key2 = key2
+		sentinelKey1, _ := userlib.HashKDF(userdata.sourceKey, []byte(filename))
+		sentinelKey2, _ := userlib.HashKDF(sentinelKey1, []byte("HMAC "+filename))
+		iv := userlib.RandomBytes(16)
+		ciphertext = EncryptThenMac(sentinelKey1, iv, sentinelKey2, sentinel)
+		userlib.DatastoreSet(sentinelUID, ciphertext)
+	}
 	return
 }
 

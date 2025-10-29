@@ -88,7 +88,7 @@ var _ = Describe("Client Tests", func() {
 
 	Describe("Basic Tests", func() {
 
-		Specify("Basic Test: Testing InitUser/GetUser on a single user.", func() {
+		FSpecify("Basic Test: Testing InitUser/GetUser on a single user.", func() {
 			userlib.DebugMsg("Initializing user Alice.")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
@@ -255,7 +255,7 @@ var _ = Describe("Client Tests", func() {
 
 	var _ = Describe("Flag Tests - User Auth", func() {
 
-		Specify("Flag Test: Test Invalid UserInit", func() {
+		FSpecify("Flag Test: Test Invalid UserInit", func() {
 			userlib.DebugMsg("Initlalizing user Alice")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
@@ -269,7 +269,7 @@ var _ = Describe("Client Tests", func() {
 			Expect(err).ToNot(BeNil())
 		})
 
-		Specify("Flag Test: Test Invalid GetUser 1", func() {
+		FSpecify("Flag Test: Test Invalid GetUser 1", func() {
 			userlib.DebugMsg("nonexistent user get")
 			charles, err = client.GetUser("ADSF", defaultPassword)
 			Expect(err).ToNot(BeNil())
@@ -283,7 +283,7 @@ var _ = Describe("Client Tests", func() {
 			Expect(err).ToNot(BeNil())
 		})
 
-		Specify("Flag Test: Test GetUser on mod'd Datastore user struct", func() {
+		FSpecify("Flag Test: Test GetUser on mod'd Datastore user struct", func() {
 			userlib.DebugMsg("initializing alice")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
@@ -443,9 +443,7 @@ var _ = Describe("Client Tests", func() {
 
 		// Test 2: Test file overwrite, append, and multi-section file handling
 		Specify("File Operations: Overwrite, append, and error handling", func() {
-			// clear()
-			
-		
+					
 			bob, err := client.InitUser("bob", "password123")
 			Expect(err).To(BeNil())
 			
@@ -497,6 +495,20 @@ var _ = Describe("Client Tests", func() {
 
 			_, err = bob.LoadFile("anothernonexistent.txt")
 			Expect(err).ToNot(BeNil(), "LoadFile should fail on non-existent file")
+		})
+
+		Specify("File operations with Datastore Adversary", func() {
+			userlib.DebugMsg("initializing Alice, Bob, Charles, and Doris")
+			alice, err = client.InitUser("alice", defaultPassword)
+			Expect(err).To(BeNil())
+			bob, err = client.InitUser("bob", defaultPassword)
+			Expect(err).To(BeNil())
+			charles, err = client.InitUser("charles", defaultPassword)
+			Expect(err).To(BeNil())
+			doris, err = client.InitUser("doris", defaultPassword)
+			Expect(err).To(BeNil())
+
+			//alice places a file on datastore. this creates some new UID's. Mallory tries to call load file on those files, 
 		})
 
 
