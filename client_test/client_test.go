@@ -36,7 +36,7 @@ func TestSetupAndExecution(t *testing.T) {
 // ================================================
 const defaultPassword = "password"
 const emptyString = ""
-const contentOne = "Bitcoin is Nick's favorite"
+const contentOne = "Bitcoin is Nick's favorite "
 const contentTwo = "digital "
 const contentThree = "cryptocurrency!"
 
@@ -107,9 +107,19 @@ var _ = Describe("Client Tests", func() {
 			err = alice.StoreFile(aliceFile, []byte(contentOne))
 			Expect(err).To(BeNil())
 
+			userlib.DebugMsg("loadfile for contentOne")
+			content, err := alice.LoadFile(aliceFile)
+			Expect(err).To(BeNil())
+			Expect(content).To(Equal([]byte(contentOne)))
+
 			userlib.DebugMsg("Appending file data: %s", contentTwo)
 			err = alice.AppendToFile(aliceFile, []byte(contentTwo))
 			Expect(err).To(BeNil())
+
+			userlib.DebugMsg("loadfile with contenttwo")
+			content, err = alice.LoadFile(aliceFile)
+			Expect(err).To(BeNil())
+			Expect(content).To(Equal([]byte(contentOne + contentTwo)))
 
 			userlib.DebugMsg("Appending file data: %s", contentThree)
 			err = alice.AppendToFile(aliceFile, []byte(contentThree))
@@ -443,52 +453,45 @@ var _ = Describe("Client Tests", func() {
 
 		// Test 2: Test file overwrite, append, and multi-section file handling
 		Specify("File Operations: Overwrite, append, and error handling", func() {
-					
+
 			bob, err := client.InitUser("bob", "password123")
 			Expect(err).To(BeNil())
-			
+
 			initialContent := []byte("Initial content")
 			err = bob.StoreFile("myfile.txt", initialContent)
 			Expect(err).To(BeNil())
-			
-			
+
 			loadedContent, err := bob.LoadFile("myfile.txt")
 			Expect(err).To(BeNil())
 			Expect(loadedContent).To(Equal(initialContent))
-			
-			
+
 			newContent := []byte("Completely new content that replaces the old one")
 			err = bob.StoreFile("myfile.txt", newContent)
 			Expect(err).To(BeNil())
-			
-			
+
 			loadedContent, err = bob.LoadFile("myfile.txt")
 			Expect(err).To(BeNil())
 			Expect(loadedContent).To(Equal(newContent))
-			
-			
+
 			appendContent := []byte(" - This is appended text")
 			err = bob.AppendToFile("myfile.txt", appendContent)
 			Expect(err).To(BeNil())
-			
-			
+
 			expectedContent := append(newContent, appendContent...)
 			loadedContent, err = bob.LoadFile("myfile.txt")
 			Expect(err).To(BeNil())
 			Expect(loadedContent).To(Equal(expectedContent))
-			
-		
+
 			for i := 0; i < 5; i++ {
-				appendText := []byte("Append "+ strconv.Itoa(i))
+				appendText := []byte("Append " + strconv.Itoa(i))
 				err = bob.AppendToFile("myfile.txt", appendText)
 				Expect(err).To(BeNil())
 				expectedContent = append(expectedContent, appendText...)
 			}
-			
+
 			loadedContent, err = bob.LoadFile("myfile.txt")
 			Expect(err).To(BeNil())
 			Expect(loadedContent).To(Equal(expectedContent))
-			
 
 			err = bob.AppendToFile("nonexistent.txt", []byte("test"))
 			Expect(err).ToNot(BeNil(), "AppendToFile should fail on non-existent file")
@@ -508,9 +511,8 @@ var _ = Describe("Client Tests", func() {
 			doris, err = client.InitUser("doris", defaultPassword)
 			Expect(err).To(BeNil())
 
-			//alice places a file on datastore. this creates some new UID's. Mallory tries to call load file on those files, 
+			//alice places a file on datastore. this creates some new UID's. Mallory tries to call load file on those files,
 		})
-
 
 		Specify("Flag Test: Revoke and Revoked Adversary", func() {
 			userlib.DebugMsg("initializing Alice, Bob, Charles, Doris")

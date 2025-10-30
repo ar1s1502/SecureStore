@@ -23,7 +23,6 @@ import (
 	// hex.EncodeToString(...) is useful for converting []byte to string
 
 	// Useful for string manipulation
-	"strings"
 
 	// Useful for formatting strings (e.g. `fmt.Sprintf`).
 	"fmt"
@@ -139,11 +138,12 @@ type GroupSentinel struct {
 	FileTail userlib.UUID
 	Key1     []byte
 	Key2     []byte
-	Owner    string
 }
+
 type Sentinel struct {
 	GroupUID    userlib.UUID
-	GroupDecKey userlib.PKEDecKey
+	GroupDecKey []byte
+	GroupMacKey []byte
 	CoOwner     string
 }
 
@@ -156,16 +156,15 @@ func catchError(err *error, msg string) (failure bool) {
 	return failure
 }
 
-func EncryptThenMac(key1 []byte, iv []byte, key2 []byte, plaintext interface{}) (ciphertext []byte) {
+func EncryptThenMac(key1 []byte, iv []byte, key2 []byte, plaintext interface{}) (ciphertext []byte, err error) {
 	plaintextBytes, err := json.Marshal(plaintext)
 	if err != nil {
 		return
 	}
-
 	ciphertext = userlib.SymEnc(key1, iv, plaintextBytes)
 	tag, _ := userlib.HMACEval(key2, ciphertext)
 	ciphertext = append(tag, ciphertext...)
-	return ciphertext
+	return ciphertext, nil
 }
 
 func MacThenDecrypt(key1 []byte, key2 []byte, ciphertext []byte, ptr interface{}) (err error) {
@@ -187,8 +186,9 @@ func MacThenDecrypt(key1 []byte, key2 []byte, ciphertext []byte, ptr interface{}
 }
 
 // asymmetric encryption, then signing
-func EncryptThenSign(encKey userlib.PKEEncKey, signKey userlib.DSSignKey, plaintext interface{}) (ciphertext []byte) {
+func EncryptThenSign(encKey userlib.PKEEncKey, signKey userlib.DSSignKey, plaintext interface{}) (ciphertext []byte, err error) {
 	plaintextBytes, err := json.Marshal(plaintext)
+	userlib.DebugMsg("length plaintextbytes: %d", len(plaintextBytes))
 	if err != nil {
 		return
 	}
@@ -196,15 +196,20 @@ func EncryptThenSign(encKey userlib.PKEEncKey, signKey userlib.DSSignKey, plaint
 	if err != nil {
 		return
 	}
+	userlib.DebugMsg("length cipher: %d", len(ciphertext))
 	sig, err := userlib.DSSign(signKey, ciphertext)
 	if err != nil {
 		return
 	}
 	ciphertext = append(sig, ciphertext...)
-	return ciphertext
+	userlib.DebugMsg("length sig: %d", len(sig))
+	userlib.DebugMsg("length group Cipher from encrypt then sign: %d", len(ciphertext))
+	return ciphertext, nil
 }
 
 func VerifyThenDecrypt(decKey userlib.PKEDecKey, verifyKey userlib.DSVerifyKey, ciphertext []byte, ptr interface{}) (err error) {
+	userlib.DebugMsg("length = %d", len(ciphertext))
+	userlib.DebugMsg("%v", ciphertext[0:50])
 	sig := ciphertext[0:256]
 	content := ciphertext[256:]
 	err = userlib.DSVerify(verifyKey, content, sig)
@@ -222,8 +227,7 @@ func VerifyThenDecrypt(decKey userlib.PKEDecKey, verifyKey userlib.DSVerifyKey, 
 	return nil
 }
 
-func getFileKeys(sentinelKey1 []byte, sentinelKey2 []byte, ciphertext []byte) (groupSent GroupSentinel, err error) {
-	var privSent Sentinel
+func getSentinels(sentinelKey1 []byte, sentinelKey2 []byte, ciphertext []byte) (privSent Sentinel, groupSent GroupSentinel, err error) {
 	ptr := &privSent
 	err = MacThenDecrypt(sentinelKey1, sentinelKey2, ciphertext, ptr)
 	if err != nil {
@@ -236,17 +240,11 @@ func getFileKeys(sentinelKey1 []byte, sentinelKey2 []byte, ciphertext []byte) (g
 		err = errors.New("couldn't find group sentinel")
 		return
 	}
-	uidString := fmt.Sprintf("%v", privSent.GroupUID)
-	verifyKey, ok := userlib.KeystoreGet(uidString + privSent.CoOwner + "Group")
-	if !ok {
-		err = errors.New("couldn't find verification Key for group sentinel")
-		return
-	}
-	err = VerifyThenDecrypt(privSent.GroupDecKey, verifyKey, ciphertext, ptr2)
+	err = MacThenDecrypt(privSent.GroupDecKey, privSent.GroupMacKey, ciphertext, ptr2)
 	if err != nil {
 		return
 	}
-	return groupSent, nil
+	return privSent, groupSent, nil
 }
 
 // checks the given uid address in Datastore
@@ -312,7 +310,10 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	key2, _ := userlib.HashKDF(userdata.sourceKey, []byte("userStructHMAC"))
 	key2 = key2[0:keyLen]
 	iv := userlib.RandomBytes(16)
-	ciphertext := EncryptThenMac(userdata.sourceKey, iv, key2, userdata)
+	ciphertext, err := EncryptThenMac(userdata.sourceKey, iv, key2, userdata)
+	if err != nil {
+		return
+	}
 	userlib.DatastoreSet(userdata.UID, ciphertext)
 	return &userdata, nil
 }
@@ -385,7 +386,11 @@ func makeFile(filename string, content []byte, userdata *User, symkeytail []byte
 		key2, _ := userlib.HashKDF(key1, userlib.RandomBytes(4))
 		key2 = key2[:keyLen]
 		iv := userlib.RandomBytes(16)
-		ciphertext := EncryptThenMac(key1, iv, key2, section)
+		var ciphertext []byte
+		ciphertext, err = EncryptThenMac(key1, iv, key2, section)
+		if err != nil {
+			return
+		}
 		userlib.DatastoreSet(sectionUID, ciphertext)
 		content = content[fileSize:]
 		prevUID = sectionUID
@@ -398,7 +403,10 @@ func makeFile(filename string, content []byte, userdata *User, symkeytail []byte
 	tail.Next = prevUID
 	tail.Content = content
 	iv := userlib.RandomBytes(16)
-	tailCipher = EncryptThenMac(symkeytail, iv, mackeytail, tail)
+	tailCipher, err = EncryptThenMac(symkeytail, iv, mackeytail, tail)
+	if err != nil {
+		return
+	}
 	return tailCipher, nil
 }
 
@@ -416,7 +424,7 @@ func (userdata *User) StoreFile(filename string, content []byte) (err error) {
 		sentinelKey2, _ := userlib.HashKDF(sentinelKey1, []byte("HMAC"+filename))
 		sentinelKey2 = sentinelKey2[:keyLen]
 		var groupSent GroupSentinel
-		groupSent, err = getFileKeys(sentinelKey1, sentinelKey2, ciphertext)
+		_, groupSent, err = getSentinels(sentinelKey1, sentinelKey2, ciphertext)
 		if err != nil {
 			return
 		}
@@ -444,30 +452,40 @@ func (userdata *User) StoreFile(filename string, content []byte) (err error) {
 		var groupSentinel GroupSentinel //groupsentinel where group = owner only
 		uidString := fmt.Sprintf("%v", tailUID)
 		groupSentUID, _ := uuid.FromBytes(userlib.Hash([]byte(userdata.Username + string(userdata.password) + uidString))[0:16])
-		uidString = fmt.Sprintf("%v", groupSentUID)
 		groupSentinel.FileTail = tailUID
 		groupSentinel.Key1 = symkey0
 		groupSentinel.Key2 = mackey0
-		groupSentinel.Owner = userdata.Username
-		pubKey, privKey, _ := userlib.PKEKeyGen()
-		err = userlib.KeystoreSet(uidString+groupSentinel.Owner+"Group", pubKey)
+		// groupSentinel.Owner = userdata.Username
+		symkey0, _ = userlib.HashKDF(userdata.sourceKey, []byte("group sentinel"))
+		symkey0 = symkey0[:16]
+		mackey0, _ = userlib.HashKDF(symkey0, []byte("HMAC group sentinel"))
+		mackey0 = mackey0[:16]
+		iv := userlib.RandomBytes(16)
+		ciphertext, err = EncryptThenMac(symkey0, iv, mackey0, groupSentinel)
 		if err != nil {
 			return
 		}
-		ciphertext = EncryptThenSign(pubKey, userdata.SignKey, groupSentinel)
 		userlib.DatastoreSet(groupSentUID, ciphertext)
 		//setting privateSentinel
 		var userSent Sentinel
-		userSent.GroupDecKey = privKey
+		userSent.GroupDecKey = symkey0
+		userSent.GroupMacKey = mackey0
 		userSent.GroupUID = groupSentUID
 		userSent.CoOwner = userdata.Username
 		sentinelKey1, _ := userlib.HashKDF(userdata.sourceKey, []byte(filename))
 		sentinelKey1 = sentinelKey1[:keyLen]
 		sentinelKey2, _ := userlib.HashKDF(sentinelKey1, []byte("HMAC"+filename))
 		sentinelKey2 = sentinelKey2[:keyLen]
-		iv := userlib.RandomBytes(16)
-		ciphertext = EncryptThenMac(sentinelKey1, iv, sentinelKey2, userSent)
+		iv = userlib.RandomBytes(16)
+		ciphertext, err = EncryptThenMac(sentinelKey1, iv, sentinelKey2, userSent)
+		if err != nil {
+			return
+		}
 		userlib.DatastoreSet(sentinelUID, ciphertext)
+		if groupSentinel.FileTail != tailUID {
+			err = errors.New("tailUID doesn't match")
+			return
+		}
 	}
 	return nil
 }
@@ -478,39 +496,78 @@ func (userdata *User) AppendToFile(filename string, content []byte) (err error) 
 	sentinelKey2, _ := userlib.HashKDF(sentinelKey1, []byte("HMAC"+filename))
 	sentinelKey2 = sentinelKey2[:keyLen]
 	sentinelUID, err := uuid.FromBytes(userlib.Hash([]byte(filename + "/" + userdata.Username))[:16])
-	if err != nil {return}
+	if err != nil {
+		return
+	}
 	ciphertext, ok := userlib.DatastoreGet(sentinelUID)
 	if !ok {
 		err = errors.New("requested user sentinel doesn't exist")
 		return
 	}
-	groupSent, err := getFileKeys(sentinelKey1, sentinelKey2, ciphertext)
-	if err != nil {return}
+	privSent, groupSent, err := getSentinels(sentinelKey1, sentinelKey2, ciphertext)
+	if err != nil {
+		return
+	}
 	tailSymKey, _ := userlib.HashKDF(userdata.sourceKey, userlib.RandomBytes(4))
 	tailSymKey = tailSymKey[:16]
 	tailMacKey, _ := userlib.HashKDF(tailSymKey, userlib.RandomBytes(4))
 	tailMacKey = tailMacKey[:16]
 	tailCipher, err := makeFile(filename, content, userdata, tailSymKey, tailMacKey, groupSent.Key1, groupSent.Key2, groupSent.FileTail)
-	if err != nil {return }
+	if err != nil {
+		return
+	}
 	newTailUID := uuid.New()
 	userlib.DatastoreSet(newTailUID, tailCipher)
 	groupSent.Key1 = tailSymKey
 	groupSent.Key2 = tailMacKey
 	groupSent.FileTail = newTailUID
+	ciphertext, err = EncryptThenMac(privSent.GroupDecKey, )
+	userlib.DebugMsg("newTailUID: %v", groupSent.FileTail)
 	return nil
 }
 
 func (userdata *User) LoadFile(filename string) (content []byte, err error) {
-	storageKey, err := uuid.FromBytes(userlib.Hash([]byte(filename + userdata.Username))[:16])
+	nilUID, _ := uuid.FromBytes(make([]byte, 16))
+	//find user sentinel
+	sentinelUID, err := uuid.FromBytes(userlib.Hash([]byte(filename + "/" + userdata.Username))[:16])
 	if err != nil {
-		return nil, err
+		return
 	}
-	dataJSON, ok := userlib.DatastoreGet(storageKey)
+	privSentCipher, ok := userlib.DatastoreGet(sentinelUID)
 	if !ok {
-		return nil, errors.New(strings.ToTitle("file not found"))
+		err = errors.New("can't find user sentinel")
+		return
 	}
-	err = json.Unmarshal(dataJSON, &content)
-	return content, err
+	//find group Sent
+	sentinelKey1, _ := userlib.HashKDF(userdata.sourceKey, []byte(filename))
+	sentinelKey1 = sentinelKey1[:keyLen]
+	sentinelKey2, _ := userlib.HashKDF(sentinelKey1, []byte("HMAC"+filename))
+	sentinelKey2 = sentinelKey2[:keyLen]
+	_, groupSent, err := getSentinels(sentinelKey1, sentinelKey2, privSentCipher)
+	if err != nil {
+		return
+	}
+	sectionUID := groupSent.FileTail
+	userlib.DebugMsg("new tailFile UID: %v", sectionUID)
+	symKey := groupSent.Key1
+	macKey := groupSent.Key2
+	for sectionUID != nilUID {
+		var section File
+		sectionCipher, ok := userlib.DatastoreGet(sectionUID)
+		if !ok {
+			err = errors.New("can't find tail file")
+			return
+		}
+		err = MacThenDecrypt(symKey, macKey, sectionCipher, &section)
+		if err != nil {
+			return
+		}
+		content = append(section.Content, content...)
+		symKey = section.NextSymKey
+		macKey = section.NextMacKey
+		sectionUID = section.Next
+	}
+	return content, nil
 }
 
 func (userdata *User) CreateInvitation(filename string, recipientUsername string) (
