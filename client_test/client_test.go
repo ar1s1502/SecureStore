@@ -301,6 +301,43 @@ var _ = Describe("Client Tests", func() {
 			aliceDesktop, err = client.GetUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
 
+			prevDatastore := userlib.DatastoreGetMap()
+			userlib.DebugMsg("prevDatastore size: %d", len(prevDatastore))
+			oldMap := make(map[userlib.UUID][]byte, len(prevDatastore))
+			for key := range prevDatastore {
+				userlib.DebugMsg("key: %v", key)
+				oldMap[key], _ = userlib.DatastoreGet(key)
+			}
+
+			userlib.DebugMsg("init bob")
+			bob, err = client.InitUser("bob", defaultPassword)
+			Expect(err).To(BeNil())
+
+			currDatastore := userlib.DatastoreGetMap()
+			userlib.DebugMsg("currDatastore size: %d", len(currDatastore))
+			for key := range currDatastore {
+				userlib.DebugMsg("key: %v", key)
+			}
+
+			userlib.DebugMsg("Mallory modifies all uid's involving Bob user")
+			for key := range currDatastore {
+				_, keyInMap := oldMap[key]
+				userlib.DebugMsg("key %v", key)
+				userlib.DebugMsg("keyInMap: %v", keyInMap)
+				if !keyInMap {
+					old, _ := userlib.DatastoreGet(key)
+					userlib.DebugMsg("old cipher length: %d", len(old))
+					userlib.DatastoreSet(key, userlib.RandomBytes(80))
+					new, _ := userlib.DatastoreGet(key)
+					userlib.DebugMsg("new cipher length: %d", len(new))
+				}
+			}
+
+			userlib.DebugMsg("Bob tries to login")
+			bob, err = client.GetUser("bob", defaultPassword)
+			userlib.DebugMsg("Bob username: %s", bob.Username)
+			Expect(err).ToNot(BeNil())
+
 			userlib.DebugMsg("modifying all of datastore...")
 			datastore := userlib.DatastoreGetMap()
 			for key := range datastore {
@@ -311,8 +348,8 @@ var _ = Describe("Client Tests", func() {
 			aliceLaptop, err = client.GetUser("alice", defaultPassword)
 			Expect(err).ToNot(BeNil())
 
-			userlib.DebugMsg("initializing bob and charles")
-			bob, err = client.InitUser("bob", defaultPassword)
+			userlib.DebugMsg("initializing doris and charles")
+			doris, err = client.InitUser("doris", defaultPassword)
 			Expect(err).To(BeNil())
 			charles, err = client.InitUser("charles", defaultPassword)
 			Expect(err).To(BeNil())
@@ -320,8 +357,8 @@ var _ = Describe("Client Tests", func() {
 			userlib.DebugMsg("Clearing datastore...")
 			userlib.DatastoreClear()
 
-			userlib.DebugMsg("Calling get user for bob and charles should err")
-			_, err := client.GetUser("bob", defaultPassword)
+			userlib.DebugMsg("Calling get user for doris and charles should err")
+			_, err = client.GetUser("doris", defaultPassword)
 			Expect(err).ToNot(BeNil())
 			_, err = client.GetUser("charles", defaultPassword)
 			Expect(err).ToNot(BeNil())
@@ -437,6 +474,10 @@ var _ = Describe("Client Tests", func() {
 			//Test if Bob/Charlie can also store/load/append on very large file, after implementing share file
 
 			prevDatastore := userlib.DatastoreGetMap()
+			oldMap := make(map[userlib.UUID][]byte, len(prevDatastore))
+			for k := range prevDatastore {
+				oldMap[k], _ = userlib.DatastoreGet(k)
+			}
 
 			userlib.DebugMsg("Alice stores and loads a massive file")
 			massiveContent := userlib.RandomBytes(91001)
@@ -456,12 +497,12 @@ var _ = Describe("Client Tests", func() {
 			currDatastore := userlib.DatastoreGetMap()
 			userlib.DebugMsg("Mallory modifies all places in Datastore that involve the massiveFile")
 			for key := range currDatastore {
-				_, ok := prevDatastore[key]
-				if !ok {
+				_, keyInMap := oldMap[key]
+				if !keyInMap {
 					userlib.DatastoreSet(key, userlib.RandomBytes(1000))
 				}
 			}
-			
+
 			userlib.DebugMsg("Alice tries loading and appending to the massiveFile after mallory mod's")
 			_, err = alice.LoadFile("massiveFile")
 			Expect(err).ToNot(BeNil())
@@ -541,12 +582,17 @@ var _ = Describe("Client Tests", func() {
 
 			userlib.DebugMsg("Alice tries with a third file")
 			alice.StoreFile(aliceFile+"3", []byte(contentThree))
-			datastore := userlib.DatastoreGetMap()
+			prevDatastore := userlib.DatastoreGetMap()
+			oldMap := make(map[userlib.UUID][]byte, len(prevDatastore))
+			for k := range prevDatastore {
+				oldMap[k], _ = userlib.DatastoreGet(k)
+			}
+
 			userlib.DebugMsg("Alice shares the third file to bob")
 			invite, _ = alice.CreateInvitation(aliceFile+"3", "bob")
 
 			for k := range userlib.DatastoreGetMap() {
-				_, kInMap := datastore[k]
+				_, kInMap := oldMap[k]
 				if !kInMap {
 					userlib.DebugMsg("Mallory tries accepting with the newly added UID")
 					err = charles.AcceptInvitation("alice", k, "newfile")
@@ -584,7 +630,7 @@ var _ = Describe("Client Tests", func() {
 			invite, _ = alice.CreateInvitation(aliceFile+"2", "bob")
 
 			userlib.DebugMsg("Mallory modifies everything on datastore")
-			datastore = userlib.DatastoreGetMap()
+			datastore := userlib.DatastoreGetMap()
 			for k := range datastore {
 				userlib.DatastoreSet(k, userlib.RandomBytes(8))
 			}
