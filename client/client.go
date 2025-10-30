@@ -168,6 +168,10 @@ func EncryptThenMac(key1 []byte, iv []byte, key2 []byte, plaintext interface{}) 
 }
 
 func MacThenDecrypt(key1 []byte, key2 []byte, ciphertext []byte, ptr interface{}) (err error) {
+	if len(ciphertext) < 65 {
+		err = errors.New("tampering occurred, there must be at least 64 bytes of mac tag")
+		return
+	}
 	tag := ciphertext[0:64]
 	content := ciphertext[64:]
 	contentHash, _ := userlib.HMACEval(key2, content)
@@ -335,9 +339,6 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	key2, _ := userlib.HashKDF(sourceKey, []byte("userStructHMAC"))
 	key2 = key2[0:keyLen]
 	err = MacThenDecrypt(sourceKey, key2, ciphertext, userdataptr)
-	// userlib.DebugMsg("READ FROM DATASTORE:")
-	// userlib.DebugMsg("key1: %v, key2: %v", sourceKey, key2)
-	// userlib.DebugMsg("tag: %v\n ciphertext: %v", ciphertext[0:64], ciphertext[64:94])
 	if catchError(&err, "invalid password provided, or tampering occurred") {
 		return userdataptr, err
 	}
@@ -346,7 +347,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	return userdataptr, nil
 }
 
-func makeFile(filename string, content []byte, userdata *User, symkeytail []byte, mackeytail []byte,
+func makeFile(content []byte, userdata *User, symkeytail []byte, mackeytail []byte,
 	oldTailKey []byte, oldTailMac []byte, oldTailUID userlib.UUID) (tailCipher []byte, err error) {
 
 	var prevUID userlib.UUID
@@ -354,20 +355,6 @@ func makeFile(filename string, content []byte, userdata *User, symkeytail []byte
 	var prevMacKey []byte
 	var i int
 
-	// sectionSymKeys := make([][]byte, sectionNumber+1)
-	// sectionMacKeys := make([][]byte, sectionNumber+1)
-	// if (len(symkey0) != keyLen) || (len(mackey0) != keyLen) {
-	// 	err = errors.New("invalid symm keys")
-	// 	return
-	// }
-	// sectionSymKeys[0] = symkey0
-	// sectionMacKeys[0] = mackey0
-	// for i := 1; i < len(sectionSymKeys); i++ {
-	// 	sectionSymKeys[i], _ = userlib.HashKDF(sectionSymKeys[i-1], []byte(filename+userdata.Username+strconv.Itoa(i)))
-	// 	sectionSymKeys[i] = sectionSymKeys[i][:keyLen]
-	// 	sectionMacKeys[i], _ = userlib.HashKDF(sectionSymKeys[i-1], []byte("HMAC"+strconv.Itoa(i)))
-	// 	sectionMacKeys[i] = sectionMacKeys[i][:keyLen]
-	// }
 	for len(content) > fileSize {
 		var section File
 		sectionUID := uuid.New()
@@ -400,7 +387,15 @@ func makeFile(filename string, content []byte, userdata *User, symkeytail []byte
 	}
 
 	var tail File
-	tail.Next = prevUID
+	if i != 0 {
+		tail.Next = prevUID
+		tail.NextMacKey = prevMacKey
+		tail.NextSymKey = prevSymKey
+	} else {
+		tail.Next = oldTailUID
+		tail.NextSymKey = oldTailKey
+		tail.NextMacKey = oldTailMac
+	}
 	tail.Content = content
 	iv := userlib.RandomBytes(16)
 	tailCipher, err = EncryptThenMac(symkeytail, iv, mackeytail, tail)
@@ -429,7 +424,7 @@ func (userdata *User) StoreFile(filename string, content []byte) (err error) {
 			return
 		}
 		fileuid := groupSent.FileTail
-		tailCipher, err := makeFile(filename, content, userdata, groupSent.Key1, groupSent.Key2, nil, nil, nilUID)
+		tailCipher, err := makeFile(content, userdata, groupSent.Key1, groupSent.Key2, nil, nil, nilUID)
 		if err != nil {
 			return err
 		}
@@ -443,7 +438,7 @@ func (userdata *User) StoreFile(filename string, content []byte) (err error) {
 		mackey0, _ := userlib.HashKDF(symkey0, []byte("HMAC"+strconv.Itoa(0)))
 		mackey0 = mackey0[:keyLen]
 		var tailCipher []byte
-		tailCipher, err = makeFile(filename, content, userdata, symkey0, mackey0, nil, nil, nilUID)
+		tailCipher, err = makeFile(content, userdata, symkey0, mackey0, nil, nil, nilUID)
 		if err != nil {
 			return
 		}
@@ -512,7 +507,7 @@ func (userdata *User) AppendToFile(filename string, content []byte) (err error) 
 	tailSymKey = tailSymKey[:16]
 	tailMacKey, _ := userlib.HashKDF(tailSymKey, userlib.RandomBytes(4))
 	tailMacKey = tailMacKey[:16]
-	tailCipher, err := makeFile(filename, content, userdata, tailSymKey, tailMacKey, groupSent.Key1, groupSent.Key2, groupSent.FileTail)
+	tailCipher, err := makeFile(content, userdata, tailSymKey, tailMacKey, groupSent.Key1, groupSent.Key2, groupSent.FileTail)
 	if err != nil {
 		return
 	}
@@ -521,8 +516,12 @@ func (userdata *User) AppendToFile(filename string, content []byte) (err error) 
 	groupSent.Key1 = tailSymKey
 	groupSent.Key2 = tailMacKey
 	groupSent.FileTail = newTailUID
-	ciphertext, err = EncryptThenMac(privSent.GroupDecKey, )
-	userlib.DebugMsg("newTailUID: %v", groupSent.FileTail)
+	iv := userlib.RandomBytes(16)
+	ciphertext, err = EncryptThenMac(privSent.GroupDecKey, iv, privSent.GroupMacKey, groupSent)
+	if err != nil {
+		return
+	}
+	userlib.DatastoreSet(privSent.GroupUID, ciphertext)
 	return nil
 }
 
@@ -548,7 +547,6 @@ func (userdata *User) LoadFile(filename string) (content []byte, err error) {
 		return
 	}
 	sectionUID := groupSent.FileTail
-	userlib.DebugMsg("new tailFile UID: %v", sectionUID)
 	symKey := groupSent.Key1
 	macKey := groupSent.Key2
 	for sectionUID != nilUID {

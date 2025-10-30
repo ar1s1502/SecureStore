@@ -328,6 +328,148 @@ var _ = Describe("Client Tests", func() {
 		})
 	})
 
+	var _ = Describe("Flag Tests - Load/Store/Append Files", func() {
+		// Test 2: Test file overwrite, append, and multi-section file handling
+		FSpecify("File Operations: Overwrite, append, and error handling", func() {
+
+			bob, err := client.InitUser("bob", "password123")
+			Expect(err).To(BeNil())
+
+			initialContent := []byte("Initial content")
+			err = bob.StoreFile("myfile.txt", initialContent)
+			Expect(err).To(BeNil())
+
+			loadedContent, err := bob.LoadFile("myfile.txt")
+			Expect(err).To(BeNil())
+			Expect(loadedContent).To(Equal(initialContent))
+
+			newContent := []byte("Completely new content that replaces the old one")
+			err = bob.StoreFile("myfile.txt", newContent)
+			Expect(err).To(BeNil())
+
+			loadedContent, err = bob.LoadFile("myfile.txt")
+			Expect(err).To(BeNil())
+			Expect(loadedContent).To(Equal(newContent))
+
+			appendContent := []byte(" - This is appended text")
+			err = bob.AppendToFile("myfile.txt", appendContent)
+			Expect(err).To(BeNil())
+
+			expectedContent := append(newContent, appendContent...)
+			loadedContent, err = bob.LoadFile("myfile.txt")
+			Expect(err).To(BeNil())
+			Expect(loadedContent).To(Equal(expectedContent))
+
+			for i := 0; i < 5; i++ {
+				appendText := []byte("Append " + strconv.Itoa(i))
+				err = bob.AppendToFile("myfile.txt", appendText)
+				Expect(err).To(BeNil())
+				expectedContent = append(expectedContent, appendText...)
+			}
+
+			loadedContent, err = bob.LoadFile("myfile.txt")
+			Expect(err).To(BeNil())
+			Expect(loadedContent).To(Equal(expectedContent))
+
+			err = bob.AppendToFile("nonexistent.txt", []byte("test"))
+			Expect(err).ToNot(BeNil(), "AppendToFile should fail on non-existent file")
+
+			_, err = bob.LoadFile("anothernonexistent.txt")
+			Expect(err).ToNot(BeNil(), "LoadFile should fail on non-existent file")
+		})
+
+		FSpecify("File operations with Datastore Adversary", func() {
+			userlib.DebugMsg("initializing Alice, Bob, Charles, and Doris")
+			alice, err = client.InitUser("alice", defaultPassword)
+			Expect(err).To(BeNil())
+			bob, err = client.InitUser("bob", defaultPassword)
+			Expect(err).To(BeNil())
+			charles, err = client.InitUser("charles", defaultPassword)
+			Expect(err).To(BeNil())
+			doris, err = client.InitUser("doris", defaultPassword)
+			Expect(err).To(BeNil())
+
+			err = alice.StoreFile(aliceFile, []byte(contentOne))
+			Expect(err).To(BeNil())
+			userlib.DebugMsg("Doris tries to load and append to alice's file")
+			_, err := doris.LoadFile(aliceFile)
+			Expect(err).ToNot(BeNil())
+			err = doris.AppendToFile(aliceFile, []byte("random"))
+			Expect(err).ToNot(BeNil())
+
+			userlib.DebugMsg("Mallory modifies all of Datastore")
+			datastore := userlib.DatastoreGetMap()
+			for key := range datastore {
+				userlib.DatastoreSet(key, userlib.RandomBytes(8))
+			}
+			userlib.DebugMsg("Alice tries appending to and loading to file")
+			err = alice.StoreFile(aliceFile, []byte("randomContent"))
+			Expect(err).ToNot(BeNil())
+			_, err = alice.LoadFile(aliceFile)
+			Expect(err).ToNot(BeNil())
+		})
+
+		FSpecify("File Operations with extremeley large files", func() {
+			userlib.DebugMsg("initializing Alice, Bob, Charles, and Doris")
+			alice, err = client.InitUser("alice", defaultPassword)
+			Expect(err).To(BeNil())
+			bob, err = client.InitUser("bob", defaultPassword)
+			Expect(err).To(BeNil())
+			charles, err = client.InitUser("charles", defaultPassword)
+			Expect(err).To(BeNil())
+			doris, err = client.InitUser("doris", defaultPassword)
+			Expect(err).To(BeNil())
+
+			userlib.DebugMsg("Alice stores and loads a large file")
+			largeContent := userlib.RandomBytes(1500)
+			err = alice.StoreFile(aliceFile, largeContent)
+			Expect(err).To(BeNil())
+			readContent, err := alice.LoadFile(aliceFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(largeContent))
+			userlib.DebugMsg("Alice appends a large chunk to the large file, then loads it again")
+			err = alice.AppendToFile(aliceFile, largeContent)
+			Expect(err).To(BeNil())
+			readContent, err = alice.LoadFile(aliceFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(append(largeContent, largeContent...)))
+
+			//Test if Bob/Charlie can also store/load/append on very large file, after implementing share file
+
+			prevDatastore := userlib.DatastoreGetMap()
+
+			userlib.DebugMsg("Alice stores and loads a massive file")
+			massiveContent := userlib.RandomBytes(91001)
+			err = alice.StoreFile("massiveFile", massiveContent)
+			Expect(err).To(BeNil())
+			readContent, err = alice.LoadFile("massiveFile")
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(massiveContent))
+			userlib.DebugMsg("Alice appends massive content to massive file")
+			err = alice.AppendToFile("massiveFile", massiveContent)
+			Expect(err).To(BeNil())
+			readContent, err = alice.LoadFile("massiveFile")
+			Expect(err).To(BeNil())
+			Expect(len(readContent)).To(Equal(len(append(massiveContent, massiveContent...))))
+			Expect(readContent).To(Equal(append(massiveContent, massiveContent...)))
+
+			currDatastore := userlib.DatastoreGetMap()
+			userlib.DebugMsg("Mallory modifies all places in Datastore that involve the massiveFile")
+			for key := range currDatastore {
+				_, ok := prevDatastore[key]
+				if !ok {
+					userlib.DatastoreSet(key, userlib.RandomBytes(1000))
+				}
+			}
+			
+			userlib.DebugMsg("Alice tries loading and appending to the massiveFile after mallory mod's")
+			_, err = alice.LoadFile("massiveFile")
+			Expect(err).ToNot(BeNil())
+			err = alice.AppendToFile("massiveFile", []byte("random"))
+			Expect(err).ToNot(BeNil())
+		})
+	})
+
 	var _ = Describe("Flag Tests - File Sharing/Revocation", func() {
 
 		Specify("Flag Test: Invalid CreateInvitations", func() {
@@ -449,69 +591,6 @@ var _ = Describe("Client Tests", func() {
 
 			err = bob.AcceptInvitation("alice", invite, bobFile+"3")
 			Expect(err).To(BeNil())
-		})
-
-		// Test 2: Test file overwrite, append, and multi-section file handling
-		Specify("File Operations: Overwrite, append, and error handling", func() {
-
-			bob, err := client.InitUser("bob", "password123")
-			Expect(err).To(BeNil())
-
-			initialContent := []byte("Initial content")
-			err = bob.StoreFile("myfile.txt", initialContent)
-			Expect(err).To(BeNil())
-
-			loadedContent, err := bob.LoadFile("myfile.txt")
-			Expect(err).To(BeNil())
-			Expect(loadedContent).To(Equal(initialContent))
-
-			newContent := []byte("Completely new content that replaces the old one")
-			err = bob.StoreFile("myfile.txt", newContent)
-			Expect(err).To(BeNil())
-
-			loadedContent, err = bob.LoadFile("myfile.txt")
-			Expect(err).To(BeNil())
-			Expect(loadedContent).To(Equal(newContent))
-
-			appendContent := []byte(" - This is appended text")
-			err = bob.AppendToFile("myfile.txt", appendContent)
-			Expect(err).To(BeNil())
-
-			expectedContent := append(newContent, appendContent...)
-			loadedContent, err = bob.LoadFile("myfile.txt")
-			Expect(err).To(BeNil())
-			Expect(loadedContent).To(Equal(expectedContent))
-
-			for i := 0; i < 5; i++ {
-				appendText := []byte("Append " + strconv.Itoa(i))
-				err = bob.AppendToFile("myfile.txt", appendText)
-				Expect(err).To(BeNil())
-				expectedContent = append(expectedContent, appendText...)
-			}
-
-			loadedContent, err = bob.LoadFile("myfile.txt")
-			Expect(err).To(BeNil())
-			Expect(loadedContent).To(Equal(expectedContent))
-
-			err = bob.AppendToFile("nonexistent.txt", []byte("test"))
-			Expect(err).ToNot(BeNil(), "AppendToFile should fail on non-existent file")
-
-			_, err = bob.LoadFile("anothernonexistent.txt")
-			Expect(err).ToNot(BeNil(), "LoadFile should fail on non-existent file")
-		})
-
-		Specify("File operations with Datastore Adversary", func() {
-			userlib.DebugMsg("initializing Alice, Bob, Charles, and Doris")
-			alice, err = client.InitUser("alice", defaultPassword)
-			Expect(err).To(BeNil())
-			bob, err = client.InitUser("bob", defaultPassword)
-			Expect(err).To(BeNil())
-			charles, err = client.InitUser("charles", defaultPassword)
-			Expect(err).To(BeNil())
-			doris, err = client.InitUser("doris", defaultPassword)
-			Expect(err).To(BeNil())
-
-			//alice places a file on datastore. this creates some new UID's. Mallory tries to call load file on those files,
 		})
 
 		Specify("Flag Test: Revoke and Revoked Adversary", func() {
