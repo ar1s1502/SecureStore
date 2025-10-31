@@ -1023,7 +1023,7 @@ var _ = Describe("Client Tests", func() {
 
 	var _ = Describe("Flag tests: Bandwidth", func() {
 
-		FSpecify("Flag Test: Bandwidth on AppendToFile", func() {
+		Specify("Flag Test: Bandwidth on AppendToFile", func() {
 
 			// Helper function to measure bandwidth of a particular operation
 			measureBandwidth := func(probe func()) (bandwidth int) {
