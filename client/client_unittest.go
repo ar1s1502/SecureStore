@@ -48,11 +48,7 @@ var _ = Describe("Client Unit Tests", func() {
 		userlib.KeystoreClear()
 	})
 
-	const defaultPassword = "password"
-	const username = "alice"
-	const plaintext = "plaintext"
-	const salt = "salt"
-	const keyLen = 16
+
 
 	Describe("Unit Tests", func() {
 		Specify("Basic Test: Check that the Username field is set for a new user", func() {

@@ -54,7 +54,7 @@ var _ = Describe("Client Tests", func() {
 	var bob *client.User
 	var charles *client.User
 	var doris *client.User
-	// var eve *client.User
+	var eve *client.User
 	// var frank *client.User
 	// var grace *client.User
 	// var horace *client.User
@@ -72,7 +72,7 @@ var _ = Describe("Client Tests", func() {
 	bobFile := "bobFile.txt"
 	charlesFile := "charlesFile.txt"
 	dorisFile := "dorisFile.txt"
-	// eveFile := "eveFile.txt"
+	eveFile := "eveFile.txt"
 	// frankFile := "frankFile.txt"
 	// graceFile := "graceFile.txt"
 	// horaceFile := "horaceFile.txt"
@@ -88,7 +88,7 @@ var _ = Describe("Client Tests", func() {
 
 	Describe("Basic Tests", func() {
 
-		FSpecify("Basic Test: Testing InitUser/GetUser on a single user.", func() {
+		Specify("Basic Test: Testing InitUser/GetUser on a single user.", func() {
 			userlib.DebugMsg("Initializing user Alice.")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
@@ -98,7 +98,7 @@ var _ = Describe("Client Tests", func() {
 			Expect(err).To(BeNil())
 		})
 
-		FSpecify("Basic Test: Testing Single User Store/Load/Append.", func() {
+		Specify("Basic Test: Testing Single User Store/Load/Append.", func() {
 			userlib.DebugMsg("Initializing user Alice.")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
@@ -265,7 +265,7 @@ var _ = Describe("Client Tests", func() {
 
 	var _ = Describe("Flag Tests - User Auth", func() {
 
-		FSpecify("Flag Test: Test Invalid UserInit", func() {
+		Specify("Flag Test: Test Invalid UserInit", func() {
 			userlib.DebugMsg("Initlalizing user Alice")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
@@ -279,7 +279,7 @@ var _ = Describe("Client Tests", func() {
 			Expect(err).ToNot(BeNil())
 		})
 
-		FSpecify("Flag Test: Test Invalid GetUser 1", func() {
+		Specify("Flag Test: Test Invalid GetUser 1", func() {
 			userlib.DebugMsg("nonexistent user get")
 			charles, err = client.GetUser("ADSF", defaultPassword)
 			Expect(err).ToNot(BeNil())
@@ -293,7 +293,7 @@ var _ = Describe("Client Tests", func() {
 			Expect(err).ToNot(BeNil())
 		})
 
-		FSpecify("Flag Test: Test GetUser on mod'd Datastore user struct", func() {
+		Specify("Flag Test: Test GetUser on mod'd Datastore user struct", func() {
 			userlib.DebugMsg("initializing alice")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
@@ -367,7 +367,7 @@ var _ = Describe("Client Tests", func() {
 
 	var _ = Describe("Flag Tests - Load/Store/Append Files", func() {
 		// Test 2: Test file overwrite, append, and multi-section file handling
-		FSpecify("File Operations: Overwrite, append, and error handling", func() {
+		Specify("File Operations: Overwrite, append, and error handling", func() {
 
 			bob, err := client.InitUser("bob", "password123")
 			Expect(err).To(BeNil())
@@ -415,7 +415,7 @@ var _ = Describe("Client Tests", func() {
 			Expect(err).ToNot(BeNil(), "LoadFile should fail on non-existent file")
 		})
 
-		FSpecify("File operations with Datastore Adversary", func() {
+		Specify("File operations with Datastore Adversary", func() {
 			userlib.DebugMsg("initializing Alice, Bob, Charles, and Doris")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
@@ -426,13 +426,27 @@ var _ = Describe("Client Tests", func() {
 			doris, err = client.InitUser("doris", defaultPassword)
 			Expect(err).To(BeNil())
 
+			prevDatastore := userlib.DatastoreGetMap()
+			oldMap := make(map[userlib.UUID][]byte, len(prevDatastore))
+			for k := range prevDatastore {
+				oldMap[k], _ = userlib.DatastoreGet(k)
+			}
+
 			err = alice.StoreFile(aliceFile, []byte(contentOne))
 			Expect(err).To(BeNil())
-			userlib.DebugMsg("Doris tries to load and append to alice's file")
+			userlib.DebugMsg("Mallory tries to load and append to alice's file")
 			_, err := doris.LoadFile(aliceFile)
 			Expect(err).ToNot(BeNil())
 			err = doris.AppendToFile(aliceFile, []byte("random"))
 			Expect(err).ToNot(BeNil())
+
+			// userlib.DebugMsg("Mallory tries to read files on Datastore directly using json.Unmarshal")
+			// for k := range userlib.DatastoreGetMap() {
+			// 	_, kInMap := oldMap[k]
+			// 	if !kInMap {
+			// 		err = json.Unmarshal() Are we allowed to import encoding/json??
+			// 	}
+			// }
 
 			userlib.DebugMsg("Mallory modifies all of Datastore")
 			datastore := userlib.DatastoreGetMap()
@@ -446,7 +460,7 @@ var _ = Describe("Client Tests", func() {
 			Expect(err).ToNot(BeNil())
 		})
 
-		FSpecify("File Operations with extremeley large files", func() {
+		Specify("File Operations with extremeley large files", func() {
 			userlib.DebugMsg("initializing Alice, Bob, Charles, and Doris")
 			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
@@ -471,8 +485,6 @@ var _ = Describe("Client Tests", func() {
 			Expect(err).To(BeNil())
 			Expect(readContent).To(Equal(append(largeContent, largeContent...)))
 
-			//Test if Bob/Charlie can also store/load/append on very large file, after implementing share file
-
 			prevDatastore := userlib.DatastoreGetMap()
 			oldMap := make(map[userlib.UUID][]byte, len(prevDatastore))
 			for k := range prevDatastore {
@@ -494,6 +506,26 @@ var _ = Describe("Client Tests", func() {
 			Expect(len(readContent)).To(Equal(len(append(massiveContent, massiveContent...))))
 			Expect(readContent).To(Equal(append(massiveContent, massiveContent...)))
 
+			userlib.DebugMsg("Alice shares massive file to bob and charles")
+			err = alice.StoreFile("massiveFile", massiveContent)
+			Expect(err).To(BeNil())
+			invite, err := alice.CreateInvitation("massiveFile", "bob")
+			Expect(err).To(BeNil())
+			err = bob.AcceptInvitation("alice", invite, bobFile)
+			Expect(err).To(BeNil())
+			invite, err = alice.CreateInvitation("massiveFile", "charles")
+			Expect(err).To(BeNil())
+			err = charles.AcceptInvitation("alice", invite, charlesFile)
+			Expect(err).To(BeNil())
+
+			userlib.DebugMsg("charles, bob should see massiveFile")
+			readContent, err = bob.LoadFile(bobFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(massiveContent))
+			readContent, err = charles.LoadFile(charlesFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(massiveContent))
+
 			currDatastore := userlib.DatastoreGetMap()
 			userlib.DebugMsg("Mallory modifies all places in Datastore that involve the massiveFile")
 			for key := range currDatastore {
@@ -503,11 +535,22 @@ var _ = Describe("Client Tests", func() {
 				}
 			}
 
-			userlib.DebugMsg("Alice tries loading and appending to the massiveFile after mallory mod's")
+			userlib.DebugMsg("Alice, bob, charles try loading and appending to the massiveFile after mallory mod's")
 			_, err = alice.LoadFile("massiveFile")
 			Expect(err).ToNot(BeNil())
 			err = alice.AppendToFile("massiveFile", []byte("random"))
 			Expect(err).ToNot(BeNil())
+
+			_, err = bob.LoadFile(bobFile)
+			Expect(err).ToNot(BeNil())
+			err = bob.AppendToFile(bobFile, []byte("random"))
+			Expect(err).ToNot(BeNil())
+
+			_, err = charles.LoadFile(charlesFile)
+			Expect(err).ToNot(BeNil())
+			err = charles.AppendToFile(charlesFile, []byte("random"))
+			Expect(err).ToNot(BeNil())
+
 		})
 	})
 
@@ -564,11 +607,19 @@ var _ = Describe("Client Tests", func() {
 			userlib.DebugMsg("Alice and Bob both create a file called " + aliceFile)
 			alice.StoreFile(aliceFile, []byte(contentOne))
 			bob.StoreFile(aliceFile, []byte(contentTwo))
+			content, _ := alice.LoadFile(aliceFile)
+			userlib.DebugMsg("alice "+aliceFile+" content :%s", content)
+			content, _ = bob.LoadFile(aliceFile)
+			userlib.DebugMsg("bob "+aliceFile+" content :%s", content)
 			userlib.DebugMsg("Alice shares the file to Bob")
 			invite, _ := alice.CreateInvitation(aliceFile, "bob")
-			userlib.DebugMsg("Bob tries giving the file the name " + aliceFile)
+			userlib.DebugMsg("Bob tries giving the file the same name " + aliceFile)
 			err = bob.AcceptInvitation("alice", invite, aliceFile)
-			Expect(err).ToNot(BeNil())
+			Expect(err).To(BeNil())
+			content, _ = alice.LoadFile(aliceFile)
+			content2, _ := bob.LoadFile(aliceFile)
+			userlib.DebugMsg("Alice and Bob's " + aliceFile + " should have the same content now")
+			Expect(content).To(Equal(content2))
 
 			userlib.DebugMsg("Mallory tries creating his own invitation, pretending to be alice")
 			charles.StoreFile(charlesFile, []byte(contentThree))
@@ -636,7 +687,259 @@ var _ = Describe("Client Tests", func() {
 			}
 
 			err = bob.AcceptInvitation("alice", invite, bobFile+"3")
+			Expect(err).ToNot(BeNil())
+		})
+
+		Specify("Flag Test: many shared users", func() {
+			userlib.DebugMsg("initializing Alice, Bob, Charles, Doris, Eve")
+			alice, err = client.InitUser("alice", defaultPassword)
 			Expect(err).To(BeNil())
+			bob, err = client.InitUser("bob", defaultPassword)
+			Expect(err).To(BeNil())
+			charles, err = client.InitUser("charles", defaultPassword)
+			Expect(err).To(BeNil())
+			doris, err = client.InitUser("doris", defaultPassword)
+			Expect(err).To(BeNil())
+			eve, err = client.InitUser("eve", defaultPassword)
+			Expect(err).To(BeNil())
+
+			err = alice.StoreFile(aliceFile, []byte(contentOne))
+			Expect(err).To(BeNil())
+			invite, err := alice.CreateInvitation(aliceFile, "bob")
+			Expect(err).To(BeNil())
+			err = bob.AcceptInvitation("alice", invite, bobFile)
+			Expect(err).To(BeNil())
+
+			err = alice.RevokeAccess(aliceFile, "bob")
+			Expect(err).To(BeNil())
+
+			userlib.DebugMsg("Alice shares to Bob who shares to Charles")
+			invite, err = alice.CreateInvitation(aliceFile, "bob")
+			Expect(err).To(BeNil())
+			err = bob.AcceptInvitation("alice", invite, bobFile)
+			Expect(err).To(BeNil())
+			invite, err = bob.CreateInvitation(bobFile, "charles")
+			Expect(err).To(BeNil())
+			err = charles.AcceptInvitation("bob", invite, charlesFile)
+			Expect(err).To(BeNil())
+			err = bob.AppendToFile(bobFile, []byte(contentTwo))
+			Expect(err).To(BeNil())
+			userlib.DebugMsg("bob loaded the file")
+			readContent, err := bob.LoadFile(bobFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal([]byte(contentOne + contentTwo)))
+			readContent, err = alice.LoadFile(aliceFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal([]byte(contentOne + contentTwo)))
+			err = bob.StoreFile(bobFile, []byte(contentThree))
+			Expect(err).To(BeNil())
+			err = charles.AppendToFile(charlesFile, []byte(contentTwo))
+			Expect(err).To(BeNil())
+			readContent, err = bob.LoadFile(bobFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal([]byte(contentThree + contentTwo)))
+			readContent, err = charles.LoadFile(charlesFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal([]byte(contentThree + contentTwo)))
+			err = charles.StoreFile(charlesFile, []byte(contentThree))
+			Expect(err).To(BeNil())
+
+			err = alice.RevokeAccess(aliceFile, "bob")
+			Expect(err).To(BeNil())
+
+			err = charles.StoreFile(charlesFile, []byte("random"))
+			Expect(err).ToNot(BeNil())
+			_, err = charles.LoadFile(charlesFile)
+			Expect(err).ToNot(BeNil())
+			err = charles.AppendToFile(charlesFile, []byte("random"))
+			Expect(err).ToNot(BeNil())
+			err = bob.AppendToFile(bobFile, []byte("random"))
+			Expect(err).ToNot(BeNil())
+
+			userlib.DebugMsg("Alice shares to Bob who shares to Charles who shares to Doris who shares to Eve")
+			invite, err = alice.CreateInvitation(aliceFile, "bob")
+			Expect(err).To(BeNil())
+			err = bob.AcceptInvitation("alice", invite, bobFile)
+			Expect(err).To(BeNil())
+			invite, err = bob.CreateInvitation(bobFile, "charles")
+			Expect(err).To(BeNil())
+			err = charles.AcceptInvitation("bob", invite, charlesFile)
+			Expect(err).To(BeNil())
+			invite, err = charles.CreateInvitation(charlesFile, "doris")
+			Expect(err).To(BeNil())
+			err = doris.AcceptInvitation("charles", invite, dorisFile)
+			Expect(err).To(BeNil())
+			invite, err = doris.CreateInvitation(dorisFile, "eve")
+			Expect(err).To(BeNil())
+			err = eve.AcceptInvitation("doris", invite, eveFile)
+			Expect(err).To(BeNil())
+
+			largeContent := userlib.RandomBytes(1600)
+			err = eve.StoreFile(eveFile, largeContent)
+			Expect(err).To(BeNil())
+			userlib.DebugMsg("bob loaded the file")
+			readContent, err = bob.LoadFile(bobFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(largeContent))
+			readContent, err = alice.LoadFile(aliceFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(largeContent))
+			err = bob.StoreFile(bobFile, largeContent)
+			Expect(err).To(BeNil())
+			err = charles.AppendToFile(charlesFile, []byte(contentTwo))
+			Expect(err).To(BeNil())
+			readContent, err = bob.LoadFile(bobFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(append(largeContent, []byte(contentTwo)...)))
+			readContent, err = charles.LoadFile(charlesFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(append(largeContent, []byte(contentTwo)...)))
+			err = charles.StoreFile(charlesFile, []byte(contentThree))
+			Expect(err).To(BeNil())
+			readContent, err = eve.LoadFile(eveFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal([]byte(contentThree)))
+
+			userlib.DebugMsg("alice revokes bob")
+			err = alice.RevokeAccess(aliceFile, "bob")
+			Expect(err).To(BeNil())
+			_, err = bob.LoadFile(bobFile)
+			Expect(err).ToNot(BeNil())
+			_, err = charles.LoadFile(charlesFile)
+			Expect(err).ToNot(BeNil())
+			_, err = doris.LoadFile(dorisFile)
+			Expect(err).ToNot(BeNil())
+			_, err = eve.LoadFile(eveFile)
+			Expect(err).ToNot(BeNil())
+
+		})
+
+		Specify("Flag Test: File sharing with large files and many shared users", func() {
+			userlib.DebugMsg("initializing Alice, Bob, Charles, Doris")
+			alice, err = client.InitUser("alice", defaultPassword)
+			Expect(err).To(BeNil())
+			bob, err = client.InitUser("bob", defaultPassword)
+			Expect(err).To(BeNil())
+			charles, err = client.InitUser("charles", defaultPassword)
+			Expect(err).To(BeNil())
+			doris, err = client.InitUser("doris", defaultPassword)
+			Expect(err).To(BeNil())
+
+			userlib.DebugMsg("Alice stores and loads a large file")
+			largeContent := userlib.RandomBytes(1500)
+			err = alice.StoreFile(aliceFile, largeContent)
+			Expect(err).To(BeNil())
+			readContent, err := alice.LoadFile(aliceFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(largeContent))
+			userlib.DebugMsg("Alice appends a large chunk to the large file, then loads it again")
+			err = alice.AppendToFile(aliceFile, largeContent)
+			Expect(err).To(BeNil())
+			readContent, err = alice.LoadFile(aliceFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(append(largeContent, largeContent...)))
+
+			err = alice.StoreFile(aliceFile, largeContent)
+			Expect(err).To(BeNil())
+
+			userlib.DebugMsg("Alice shares to Bob who shares to Charlie who shares to Doris")
+			invite, err := alice.CreateInvitation(aliceFile, "bob")
+			Expect(err).To(BeNil())
+			err = bob.AcceptInvitation("alice", invite, bobFile)
+			Expect(err).To(BeNil())
+			invite, err = bob.CreateInvitation(bobFile, "charles")
+			Expect(err).To(BeNil())
+			err = charles.AcceptInvitation("bob", invite, charlesFile)
+			Expect(err).To(BeNil())
+			invite, err = charles.CreateInvitation(charlesFile, "doris")
+			Expect(err).To(BeNil())
+			err = doris.AcceptInvitation("charles", invite, dorisFile)
+			Expect(err).To(BeNil())
+
+			userlib.DebugMsg("They should all see the same data")
+			readContent, err = bob.LoadFile(bobFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(largeContent))
+			readContent, err = charles.LoadFile(charlesFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(largeContent))
+			readContent, err = doris.LoadFile(dorisFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(largeContent))
+
+			userlib.DebugMsg("bob appends to the file")
+			err = bob.AppendToFile(bobFile, largeContent)
+			Expect(err).To(BeNil())
+
+			userlib.DebugMsg("They should all see bob's added content")
+			readContent, err = alice.LoadFile(aliceFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(append(largeContent, largeContent...)))
+			readContent, err = charles.LoadFile(charlesFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(append(largeContent, largeContent...)))
+			readContent, err = doris.LoadFile(dorisFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(append(largeContent, largeContent...)))
+
+			userlib.DebugMsg("charles appends to file")
+			err = charles.AppendToFile(charlesFile, largeContent)
+			Expect(err).To(BeNil())
+
+			userlib.DebugMsg("They should all see charles's added content")
+			readContent, err = alice.LoadFile(aliceFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(append(largeContent, append(largeContent, largeContent...)...)))
+			readContent, err = bob.LoadFile(bobFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(append(largeContent, append(largeContent, largeContent...)...)))
+			readContent, err = doris.LoadFile(dorisFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(append(largeContent, append(largeContent, largeContent...)...)))
+
+			userlib.DebugMsg("doris storeFile with new stuff")
+			err = doris.StoreFile(dorisFile, []byte(contentOne))
+			Expect(err).To(BeNil())
+
+			userlib.DebugMsg("They should all see the new file by doris")
+			readContent, err = alice.LoadFile(aliceFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal([]byte(contentOne)))
+			readContent, err = charles.LoadFile(charlesFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal([]byte(contentOne)))
+			readContent, err = doris.LoadFile(dorisFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal([]byte(contentOne)))
+
+			// test with revoke
+			userlib.DebugMsg("Alice decides to share the file with Doris as well")
+			invite, err = alice.CreateInvitation(aliceFile, "doris")
+			Expect(err).To(BeNil())
+			err = doris.AcceptInvitation("alice", invite, dorisFile)
+			Expect(err).To(BeNil())
+			readContent, err = doris.LoadFile(dorisFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal([]byte(contentOne)))
+
+			readContent, err = alice.LoadFile(aliceFile)
+			Expect(err).To(BeNil())
+			readContentBob, err := bob.LoadFile(bobFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal(readContentBob))
+			Expect(readContent).To(Equal([]byte(contentOne)))
+
+			userlib.DebugMsg("Alice revokes bob's access")
+			err = alice.RevokeAccess(aliceFile, "bob")
+			Expect(err).To(BeNil())
+			userlib.DebugMsg("Doris should still see the file, while bob and charlie shouldn't")
+			readContent, err = doris.LoadFile(dorisFile)
+			Expect(err).To(BeNil())
+			Expect(readContent).To(Equal([]byte(contentOne)))
+			_, err = bob.LoadFile(bobFile)
+			Expect(err).ToNot(BeNil())
+			_, err = charles.LoadFile(charlesFile)
+			Expect(err).ToNot(BeNil())
 		})
 
 		Specify("Flag Test: Revoke and Revoked Adversary", func() {
@@ -697,9 +1000,9 @@ var _ = Describe("Client Tests", func() {
 
 			userlib.DebugMsg("Doris and Charles try to append to the file")
 			err = charles.AppendToFile(charlesFile+"2", []byte(contentThree))
-			Expect(err).To(BeNil())
+			Expect(err).ToNot(BeNil())
 			err = doris.AppendToFile(dorisFile+"2", []byte(contentThree))
-			Expect(err).To(BeNil())
+			Expect(err).ToNot(BeNil())
 
 			userlib.DebugMsg("Alice revokes Bob's access to aliceFile")
 			err = alice.RevokeAccess(aliceFile, "bob")
@@ -710,8 +1013,10 @@ var _ = Describe("Client Tests", func() {
 			err = bob.AcceptInvitation("alice", copyInvite, bobFile+"2")
 			Expect(err).ToNot(BeNil())
 
-			userlib.DebugMsg("Bob tries to load the file")
+			userlib.DebugMsg("Bob tries to load/append to the file")
 			_, err = bob.LoadFile(bobFile + "2")
+			Expect(err).ToNot(BeNil())
+			err = bob.AppendToFile(bobFile+"2", []byte("random"))
 			Expect(err).ToNot(BeNil())
 		})
 	})
