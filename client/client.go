@@ -150,7 +150,7 @@ type FileSentinel struct {
 	FileTail userlib.UUID
 	FileKey1 []byte
 	FileKey2 []byte
-	Owner    string
+	Owner    userlib.UUID
 	FileID   userlib.UUID
 }
 
@@ -373,7 +373,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	return userdataptr, nil
 }
 
-func makeFile(content []byte, userdata *User, symkeytail []byte, mackeytail []byte,
+func (userdata *User) makeFile(content []byte, symkeytail []byte, mackeytail []byte,
 	oldTailKey []byte, oldTailMac []byte, oldTailUID userlib.UUID) (tailCipher []byte, err error) {
 
 	var prevUID userlib.UUID
@@ -422,6 +422,10 @@ func makeFile(content []byte, userdata *User, symkeytail []byte, mackeytail []by
 		tail.NextSymKey = oldTailKey
 		tail.NextMacKey = oldTailMac
 	}
+	if len(content) > 512 {
+		err = errors.New("tail section content size too big")
+		return
+	}
 	tail.Content = content
 	iv := userlib.RandomBytes(16)
 	tailCipher, err = EncryptThenMac(symkeytail, iv, mackeytail, tail)
@@ -449,7 +453,7 @@ func (userdata *User) StoreFile(filename string, content []byte) error {
 			return err
 		}
 		fileuid := fileSent.FileTail
-		tailCipher, err := makeFile(content, userdata, fileSent.FileKey1, fileSent.FileKey2, nil, nil, nilUID)
+		tailCipher, err := userdata.makeFile(content, fileSent.FileKey1, fileSent.FileKey2, nil, nil, nilUID)
 		if err != nil {
 			return err
 		}
@@ -462,7 +466,7 @@ func (userdata *User) StoreFile(filename string, content []byte) error {
 		if err != nil {
 			return err
 		}
-		tailCipher, err := makeFile(content, userdata, symkey0, mackey0, nil, nil, nilUID)
+		tailCipher, err := userdata.makeFile(content, symkey0, mackey0, nil, nil, nilUID)
 		if err != nil {
 			return err
 		}
@@ -474,7 +478,7 @@ func (userdata *User) StoreFile(filename string, content []byte) error {
 		fileSent.FileTail = tailUID
 		fileSent.FileKey1 = symkey0
 		fileSent.FileKey2 = mackey0
-		fileSent.Owner = userdata.Username
+		fileSent.Owner = userdata.UID
 		fileSent.FileID = uuid.New()
 		symkey0, mackey0, err = deriveSymMacPair(userdata.sourceKey, "file Sentinel "+uidString, "HMAC file sentinel")
 		if err != nil {
@@ -556,7 +560,7 @@ func (userdata *User) AppendToFile(filename string, content []byte) (err error) 
 	if err != nil {
 		return
 	}
-	tailCipher, err := makeFile(content, userdata, tailSymKey, tailMacKey, fileSent.FileKey1, fileSent.FileKey2, fileSent.FileTail)
+	tailCipher, err := userdata.makeFile(content, tailSymKey, tailMacKey, fileSent.FileKey1, fileSent.FileKey2, fileSent.FileTail)
 	if err != nil {
 		return
 	}
@@ -662,7 +666,7 @@ func (userdata *User) CreateInvitation(filename string, recipientUsername string
 	if err != nil {
 		return
 	}
-	if fileSent.Owner == userdata.Username {
+	if fileSent.Owner == userdata.UID {
 		recipSent := groupSent //recipient group sentinel contains the same data as the owner's individual group sentinel
 		fileUID := fmt.Sprintf("%v", fileSent.FileID)
 		recipSentUID, _ := uuid.FromBytes(userlib.Hash([]byte(recipientUsername + string(userdata.password) + fileUID))[:16])
@@ -751,7 +755,7 @@ func (userdata *User) RevokeAccess(filename string, recipientUsername string) (e
 	if err != nil {
 		return
 	}
-	tailCipher, err := makeFile(content, userdata, newsymkey, newmackey, nil, nil, nilUID)
+	tailCipher, err := userdata.makeFile(content, newsymkey, newmackey, nil, nil, nilUID)
 	if err != nil {
 		return
 	}

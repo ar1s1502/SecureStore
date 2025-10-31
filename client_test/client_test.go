@@ -1020,4 +1020,63 @@ var _ = Describe("Client Tests", func() {
 			Expect(err).ToNot(BeNil())
 		})
 	})
+
+	var _ = Describe("Flag tests: Bandwidth", func() {
+
+		FSpecify("Flag Test: Bandwidth on AppendToFile", func() {
+
+			// Helper function to measure bandwidth of a particular operation
+			measureBandwidth := func(probe func()) (bandwidth int) {
+				before := userlib.DatastoreGetBandwidth()
+				probe()
+				after := userlib.DatastoreGetBandwidth()
+				return after - before
+			}
+
+			userlib.DebugMsg("initializing user with really big username/password")
+			username := string(userlib.RandomBytes(1500))
+			password := string(userlib.RandomBytes(1500))
+			alice, err = client.InitUser(username, password)
+			Expect(err).To(BeNil())
+			userlib.DebugMsg("user has very big file with very big filename")
+			fileName := string(userlib.RandomBytes(1500))
+			content := userlib.RandomBytes(2100)
+			bw := measureBandwidth(func() {
+				err = alice.StoreFile(fileName, content)
+				Expect(err).To(BeNil())
+			})
+			userlib.DebugMsg("Storing big file bandwidth: %d", bw)
+			userlib.DebugMsg("Append to file with large data")
+
+			contentSize := len(content)
+			var prevBw int
+			for k := 0; k < 10; k++ {
+				content = userlib.RandomBytes(k * contentSize)
+				for i := 1; i <= 10; i++ {
+					bw2 := measureBandwidth(func() {
+						err = alice.AppendToFile(fileName, content)
+						Expect(err).To(BeNil())
+					})
+					if i == 1 {
+						prevBw = bw2
+						continue
+					} else {
+						userlib.DebugMsg("bandwidth from appending on the %dth time: %d", i, bw2)
+						Expect(bw2 == prevBw).To(BeTrue())
+					}
+				}
+			}
+
+			// massiveContentSize := 3000
+			// massiveContent := userlib.RandomBytes(5*massiveContentSize)
+			// bw3 := measureBandwidth(func() {
+			// 	err = alice.AppendToFile(fileName, massiveContent)
+			// 	Expect(err).To(BeNil())
+			// })
+			// userlib.DebugMsg("bandwidth from appending massive content: %d", bw3)
+			// ok := bw3 < (5*massiveContentSize + bw)
+			// Expect(ok).To(BeTrue())
+
+		})
+	})
 })
